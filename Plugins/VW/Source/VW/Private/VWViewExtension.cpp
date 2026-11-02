@@ -2,7 +2,8 @@
 
 
 #include "VWViewExtension.h"
-#include "FXRenderingUtils.h"
+#include <FXRenderingUtils.h>
+#include <PostProcess/PostProcessInputs.h>	
 
 FVWViewExtension::FVWViewExtension(const FAutoRegister& AutoReg, UWorld* InWorld) :
 	FWorldSceneViewExtension(AutoReg, InWorld)
@@ -18,9 +19,13 @@ void FVWViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder
 	if (GFrameCounterRenderThread % 120 != 0)
 		return;
 
-	const FIntRect ViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(InView);
+	Inputs.Validate();
+	const FSceneTextureUniformParameters* SceneTextures = Inputs.SceneTextures->GetContents();
 
-	const int IsRenderThread = IsInRenderingThread() ? 1 : 0;
-	UE_LOG(LogTemp, Log, TEXT("[VW] PrePostProcessPass 렌더 스레드 = %d, 뷰 = %u, 크기 = %dx%d, SceneCapture = %d"),
-		IsRenderThread, InView.GetViewKey(), ViewRect.Width(), ViewRect.Height(), InView.bIsSceneCapture ? 1 : 0);
+	FVWRenderer::FViewInputs ViewInputs;
+	ViewInputs.SceneColor = SceneTextures->SceneColorTexture;
+	ViewInputs.SceneDepth = SceneTextures->SceneDepthTexture;
+	ViewInputs.ViewRect = UE::FXRenderingUtils::GetRawViewRectUnsafe(InView);
+
+	Renderer.Render(GraphBuilder, InView, ViewInputs);
 }

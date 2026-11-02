@@ -1,0 +1,17 @@
+#include "/Engine/Private/Common.ush"
+
+Texture2D<float4> SceneColorTexture;
+RWTexture2D<float4> Output;
+int2 ViewRectMin;
+int2 ViewSize;
+float4 Tint;
+
+[numthreads(8, 8, 1)]
+void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+    if (any(DispatchThreadId.xy >= uint2(ViewSize)))
+        return;
+    const int2 Pixel = ViewRectMin + DispatchThreadId.xy;
+    const float4 Color = SceneColorTexture[Pixel];
+    Output[Pixel] = float4(Color.rgb * Tint.rgb, Color.a);
+}

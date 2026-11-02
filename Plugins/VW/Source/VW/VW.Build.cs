@@ -1,5 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
+using System.IO;
 using UnrealBuildTool;
 
 public class VW : ModuleRules
@@ -48,7 +49,9 @@ public class VW : ModuleRules
 				"InteractiveToolsFramework",
 				"EditorInteractiveToolsFramework",
 				"RenderCore",
-				"Renderer"
+				"Renderer",
+				"Projects",
+				"RHI"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
@@ -59,6 +62,8 @@ public class VW : ModuleRules
 			{
 				// ... add any modules that your module loads dynamically here ...
 			}
-			);
-	}
+		);
+
+        PrivateIncludePaths.Add(Path.Combine(EngineDirectory, "Source", "Runtime", "Renderer", "Internal"));
+    }
 }

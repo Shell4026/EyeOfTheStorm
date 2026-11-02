@@ -4,9 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "SceneViewExtension.h"
-/**
- * 
- */
+#include "VWRenderer.h"
+
 class FVWViewExtension : public FWorldSceneViewExtension
 {
 public:
@@ -14,4 +13,8 @@ public:
 	~FVWViewExtension();
 
 	virtual void PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& InView, const FPostProcessingInputs& Inputs) override;
+
+	FVWRenderer& GetRenderer_RenderThread() { check(IsInRenderingThread()); return Renderer; }
+private:
+	FVWRenderer Renderer;
 };
