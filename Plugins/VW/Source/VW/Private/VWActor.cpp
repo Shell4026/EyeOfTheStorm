@@ -3,7 +3,7 @@
 
 #include "VWActor.h"
 
-#include <Components/BillboardComponent.h>
+#include "Components/BillboardComponent.h"
 
 // Sets default values
 AVWActor::AVWActor()

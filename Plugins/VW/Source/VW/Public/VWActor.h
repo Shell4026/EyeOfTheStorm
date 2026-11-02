@@ -9,7 +9,7 @@
 class UBillboardComponent;
 
 UCLASS(meta = (DisplayName = "Volumetric Weather"))
-class EYEOFTHESTORM_API AVWActor : public AActor
+class VW_API AVWActor : public AActor
 {
 	GENERATED_BODY()
 	
