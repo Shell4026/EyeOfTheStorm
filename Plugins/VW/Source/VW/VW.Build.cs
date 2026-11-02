@@ -46,7 +46,9 @@ public class VW : ModuleRules
 				"UnrealEd",
 				"LevelEditor",
 				"InteractiveToolsFramework",
-				"EditorInteractiveToolsFramework"
+				"EditorInteractiveToolsFramework",
+				"RenderCore",
+				"Renderer"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
