@@ -34,7 +34,7 @@ void FVWRenderer::RenderHello(FRDGBuilder& GraphBuilder, FGlobalShaderMap* Shade
 	const FRDGTextureDesc OutDesc = FRDGTextureDesc::Create2D(Inputs.SceneColor->Desc.Extent, Inputs.SceneColor->Desc.Format, FClearValueBinding::Black, UAVTextureFlags);
 	FRDGTextureRef Output = GraphBuilder.CreateTexture(OutDesc, TEXT("VW.HelloOutput"));
 
-	FVWHelloCS::FParameters* ParamsPtr = GraphBuilder.AllocParameters<FVWHelloCS::FParameters>();
+	FVWHelloCS::FParameters* const ParamsPtr = GraphBuilder.AllocParameters<FVWHelloCS::FParameters>();
 	ParamsPtr->SceneColorTexture = Inputs.SceneColor;
 	ParamsPtr->Output = GraphBuilder.CreateUAV(Output);
 	ParamsPtr->ViewRectMin = Inputs.ViewRect.Min;
