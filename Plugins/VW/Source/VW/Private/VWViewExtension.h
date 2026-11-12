@@ -14,7 +14,10 @@ public:
 
 	virtual void PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& InView, const FPostProcessingInputs& Inputs) override;
 
+	void SetActive_RenderThread(bool bInActive) { check(IsInRenderingThread()); bActive = bInActive; }
+
 	FVWRenderer& GetRenderer_RenderThread() { check(IsInRenderingThread()); return Renderer; }
 private:
 	FVWRenderer Renderer;
+	bool bActive = false;
 };

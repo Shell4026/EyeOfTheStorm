@@ -2,8 +2,10 @@
 
 
 #include "VWActor.h"
+#include "VWSubSystem.h"
 
 #include "Components/BillboardComponent.h"
+#include "Engine/World.h"
 
 // Sets default values
 AVWActor::AVWActor()
@@ -21,11 +23,32 @@ AVWActor::AVWActor()
 #endif
 }
 
+void AVWActor::PostRegisterAllComponents()
+{
+	Super::PostRegisterAllComponents();
+
+	UWorld* const WorldPtr = GetWorld();
+	if (UVWSubSystem* SubSystem = WorldPtr ? WorldPtr->GetSubsystem<UVWSubSystem>() : nullptr)
+	{
+		SubSystem->RegisterWeatherActor(this);
+		PushToRenderer();
+	}
+}
+
+void AVWActor::PostUnregisterAllComponents()
+{
+	UWorld* const WorldPtr = GetWorld();
+	if (UVWSubSystem* SubSystem = WorldPtr ? WorldPtr->GetSubsystem<UVWSubSystem>() : nullptr)
+		SubSystem->UnRegisterWeatherActor(this);
+
+	Super::PostUnregisterAllComponents();
+}
+
 #if WITH_EDITOR
 void AVWActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
-	UE_LOG(LogTemp, Log, TEXT("[VW] %s 변경됨. 시간 = %.2f"), *PropertyChangedEvent.GetPropertyName().ToString(), Hour);
+	PushToRenderer();
 }
 #endif
 
@@ -43,4 +66,13 @@ void AVWActor::Tick(float DeltaTime)
 void AVWActor::BeginPlay()
 {
 	Super::BeginPlay();
+}
+
+void AVWActor::PushToRenderer()
+{
+	UWorld* const WorldPtr = GetWorld();
+	UVWSubSystem* const SubSystem = WorldPtr ? WorldPtr->GetSubsystem<UVWSubSystem>() : nullptr;
+	if (SubSystem == nullptr)
+		return;
+	SubSystem->PushHelloTint(HelloTint);
 }

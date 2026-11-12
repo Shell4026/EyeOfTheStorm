@@ -16,6 +16,8 @@ class VW_API AVWActor : public AActor
 public:	
 	AVWActor();
 
+	virtual void PostRegisterAllComponents() override;
+	virtual void PostUnregisterAllComponents() override;
 	virtual void Tick(float DeltaTime) override;
 	virtual bool ShouldTickIfViewportsOnly() const override { return true; }
 
@@ -24,11 +26,15 @@ public:
 #endif
 protected:
 	virtual void BeginPlay() override;
+private:
+	void PushToRenderer();
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather", meta = (DisplayName = "시간", ClampMin = "0", clampMax = "24"))
 	float Hour = 1.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather", meta = (DisplayName = "시간 속도(시간/초)", ClampMin = "0", UIMax = "2"))
 	float TimeSpeed = 0.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Debug", meta = (DisplayName = "Hello 색", HideAlphaChannel))
+	FLinearColor HelloTint = FLinearColor{ 1.f, 0.3f, 0.3f };
 private:
 #if WITH_EDITORONLY_DATA
 	UPROPERTY()

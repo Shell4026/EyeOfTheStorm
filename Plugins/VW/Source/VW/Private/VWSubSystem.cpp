@@ -27,6 +27,44 @@ void UVWSubSystem::Deinitialize()
 	Super::Deinitialize();
 }
 
+void UVWSubSystem::RegisterWeatherActor(AActor* Actor)
+{
+	WeatherActorPtr = Actor;
+
+	ENQUEUE_RENDER_COMMAND(VWSetActive)(
+		[Extension = ViewExtension](FRHICommandListImmediate&)
+		{
+			if (Extension)
+				Extension->SetActive_RenderThread(true);
+		}
+	);
+}
+
+void UVWSubSystem::UnRegisterWeatherActor(AActor* Actor)
+{
+	if (WeatherActorPtr.Get() != Actor)
+		return;
+	WeatherActorPtr.Reset();
+	ENQUEUE_RENDER_COMMAND(VWSetActive)(
+		[Extension = ViewExtension](FRHICommandListImmediate&)
+		{
+			if (Extension)
+				Extension->SetActive_RenderThread(false);
+		}
+	);
+}
+
+void UVWSubSystem::PushHelloTint(const FLinearColor& InColor)
+{
+	ENQUEUE_RENDER_COMMAND(VWPushHelloTint)(
+		[Extension = ViewExtension, InColor](FRHICommandListImmediate&)
+		{
+			if (Extension)
+				Extension->GetRenderer_RenderThread().SetHelloTint_RenderThread(InColor);
+		}
+	);
+}
+
 bool UVWSubSystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
 	return WorldType == EWorldType::Type::Editor || WorldType == EWorldType::Type::PIE || WorldType == EWorldType::Type::Game;

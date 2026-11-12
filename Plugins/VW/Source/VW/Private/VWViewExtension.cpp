@@ -16,6 +16,9 @@ FVWViewExtension::~FVWViewExtension()
 
 void FVWViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& InView, const FPostProcessingInputs& Inputs)
 {
+	if (!bActive)
+		return;
+
 	Inputs.Validate();
 	const FSceneTextureUniformParameters* SceneTextures = Inputs.SceneTextures->GetContents();
 

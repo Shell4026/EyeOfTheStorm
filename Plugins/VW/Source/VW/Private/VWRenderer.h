@@ -20,7 +20,11 @@ public:
 	FVWRenderer();
 	~FVWRenderer();
 
+	void SetHelloTint_RenderThread(const FLinearColor& InColor) { check(IsInRenderingThread()); HelloTint = InColor; }
+
 	void Render(FRDGBuilder& GraphBuilder, const FSceneView& View, const FViewInputs& Inputs);
 private:
 	void RenderHello(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FViewInputs& Inputs);
+private:
+	FLinearColor HelloTint = FLinearColor{ 1.f, 0.3f, 0.3f };
 };

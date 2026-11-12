@@ -39,7 +39,7 @@ void FVWRenderer::RenderHello(FRDGBuilder& GraphBuilder, FGlobalShaderMap* Shade
 	ParamsPtr->Output = GraphBuilder.CreateUAV(Output);
 	ParamsPtr->ViewRectMin = Inputs.ViewRect.Min;
 	ParamsPtr->ViewSize = ViewSize;
-	ParamsPtr->Tint = FVector4f{ 1.f, 0.3f, 0.3f, 1.f };
+	ParamsPtr->Tint = FVector4f{ HelloTint.R, HelloTint.G, HelloTint.B, 1.f };
 
 	TShaderMapRef<FVWHelloCS> ComputeShader{ ShaderMap };
 	FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.Hello"), ComputeShader, ParamsPtr, FComputeShaderUtils::GetGroupCount(ViewSize, 8));

@@ -15,8 +15,14 @@ class UVWSubSystem : public UWorldSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+
+	void RegisterWeatherActor(AActor* Actor);
+	void UnRegisterWeatherActor(AActor* Actor);
+
+	void PushHelloTint(const FLinearColor& InColor);
 protected:
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 private:
 	TSharedPtr<FVWViewExtension, ESPMode::ThreadSafe> ViewExtension;
+	TWeakObjectPtr<AActor> WeatherActorPtr;
 };
