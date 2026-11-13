@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "VWArtistSetting.h"
+
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "VWActor.generated.h"
@@ -29,10 +31,10 @@ protected:
 private:
 	void PushToRenderer();
 public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather", meta = (DisplayName = "시간", ClampMin = "0", clampMax = "24"))
-	float Hour = 1.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather", meta = (DisplayName = "시간 속도(시간/초)", ClampMin = "0", UIMax = "2"))
-	float TimeSpeed = 0.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather")
+	FVWArtistSetting Artist;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Quality")
+	FVWQualityOptions Quality;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Debug", meta = (DisplayName = "Hello 색", HideAlphaChannel))
 	FLinearColor HelloTint = FLinearColor{ 1.f, 0.3f, 0.3f };
 private:
@@ -40,4 +42,5 @@ private:
 	UPROPERTY()
 	TObjectPtr<UBillboardComponent> Sprite;
 #endif
+	bool bDirty = false;
 };

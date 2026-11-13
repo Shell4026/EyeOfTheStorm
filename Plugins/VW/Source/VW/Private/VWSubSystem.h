@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
+#include "VWRenderSettings.h"
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -20,6 +21,7 @@ public:
 	void UnRegisterWeatherActor(AActor* Actor);
 
 	void PushHelloTint(const FLinearColor& InColor);
+	void PushSettings(const FVWRenderSettings& Settings);
 protected:
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 private:

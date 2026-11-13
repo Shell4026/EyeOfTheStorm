@@ -1,6 +1,23 @@
 #pragma once
 #include "/Engine/Private/Common.ush"
 
+float3 UEToWDir(float3 D)
+{
+    return float3(D.x, D.z, D.y);
+}
+float3 WToUEDir(float3 D)
+{
+    return float3(D.x, D.z, D.y);
+}
+float3 UEToWPos(float3 P)
+{
+    return float3(P.x, P.z, P.y) * 0.01;
+}
+float3 WToUEPos(float3 P)
+{
+    return float3(P.x, P.z, P.y) * 100.0;
+}
+
 float2 ViewUVToNDC(float2 UV)
 {
     // UV 좌상단 0, 0
@@ -16,4 +33,18 @@ float3 GetRayDirUE(float2 UV)
 {
     // 메모) 언리얼은 1이 근평면
     return normalize(ReconstructCamRelPosUE(UV, 1.0));
+}
+float3 GetRayDirW(float2 UV)
+{
+    return UEToWDir(GetRayDirUE(UV));
+}
+bool IsSky(float DeviceZ)
+{
+    return DeviceZ <= 0.0;
+}
+float GetSurfaceDistance(float2 UV, float DeviceZ)
+{
+    if (IsSky(DeviceZ))
+        return 1e10;
+    return length(ReconstructCamRelPosUE(UV, DeviceZ)) * 0.01;
 }

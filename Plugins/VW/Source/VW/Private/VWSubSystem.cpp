@@ -65,6 +65,17 @@ void UVWSubSystem::PushHelloTint(const FLinearColor& InColor)
 	);
 }
 
+void UVWSubSystem::PushSettings(const FVWRenderSettings& Settings)
+{
+	ENQUEUE_RENDER_COMMAND(VWPushSettings)(
+		[Extension = ViewExtension, Settings](FRHICommandListImmediate&)
+		{
+			if (Extension)
+				Extension->GetRenderer_RenderThread().SetSettings_RenderThread(Settings);
+		}
+	);
+}
+
 bool UVWSubSystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
 	return WorldType == EWorldType::Type::Editor || WorldType == EWorldType::Type::PIE || WorldType == EWorldType::Type::Game;

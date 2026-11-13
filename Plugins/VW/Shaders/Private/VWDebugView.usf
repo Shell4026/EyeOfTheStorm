@@ -12,13 +12,18 @@ void MainCS(uint3 DispatchThreadID : SV_DispatchThreadID)
         return;
 
     const int2 Pixel = VWView.ViewRectMin + int2(DispatchThreadID.xy);
+    const float DeviceZ = SceneDepthTex[Pixel].r;
     const float2 UV = (DispatchThreadID.xy + 0.5) / float2(VWView.ViewSize);
+    const float3 RayDirW = GetRayDirW(UV);
     
     float3 Color = SceneColorTex[Pixel].rgb;
     if (DebugMode == 1)
     {
-        Color = GetRayDirUE(UV) * 0.5 + 0.5;
+        Color = RayDirW * 0.5 + 0.5;
+    }
+    else if(DebugMode == 2)
+    {
+        Color = IsSky(DeviceZ) ? float3(0.1, 0.2, 0.8) : frac(GetSurfaceDistance(UV, DeviceZ) / 100.0).xxx;
     }
     Output[Pixel] = float4(Color, 1.0);
-
 }

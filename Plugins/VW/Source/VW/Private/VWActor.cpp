@@ -3,6 +3,7 @@
 
 #include "VWActor.h"
 #include "VWSubSystem.h"
+#include "VWParameterMapper.h"
 
 #include "Components/BillboardComponent.h"
 #include "Engine/World.h"
@@ -48,6 +49,7 @@ void AVWActor::PostUnregisterAllComponents()
 void AVWActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
+	bDirty = true;
 	PushToRenderer();
 }
 #endif
@@ -55,13 +57,14 @@ void AVWActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 void AVWActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	if (TimeSpeed > 0.f)
+	if (Artist.TimeSpeed > 0.f)
 	{
-		const int32 PrevHour = FMath::FloorToInt(Hour);
-		Hour = FMath::Fmod(Hour + TimeSpeed * DeltaTime, 24.f);
-		if (FMath::FloorToInt(Hour) != PrevHour)
-			UE_LOG(LogTemp, Log, TEXT("[VW] %d시"), FMath::FloorToInt(Hour));
+		Artist.Hour = FMath::Fmod(Artist.Hour + Artist.TimeSpeed * DeltaTime, 24.f);
+		bDirty = true;
 	}
+
+	if (bDirty)
+		PushToRenderer();
 }
 void AVWActor::BeginPlay()
 {
@@ -74,5 +77,9 @@ void AVWActor::PushToRenderer()
 	UVWSubSystem* const SubSystem = WorldPtr ? WorldPtr->GetSubsystem<UVWSubSystem>() : nullptr;
 	if (SubSystem == nullptr)
 		return;
+	const FVWRenderSettings Settings = VWParameterMapper::ConvertRenderSetting(Artist, Quality);
+	SubSystem->PushSettings(Settings);
 	SubSystem->PushHelloTint(HelloTint);
+
+	bDirty = false;
 }

@@ -12,12 +12,18 @@ static TAutoConsoleVariable<int32> CVarVWHello(
 	EConsoleVariableFlags::ECVF_RenderThreadSafe
 );
 static TAutoConsoleVariable<int32> CVarVWDebugView(
-	TEXT("r.VW.DebugView"), 0, TEXT("1 = 광선 방향"),
+	TEXT("r.VW.DebugView"), 0, TEXT("1 = 광선 방향, 2 = 표면 거리"),
 	EConsoleVariableFlags::ECVF_RenderThreadSafe
 );
 
 FVWRenderer::FVWRenderer() = default;
 FVWRenderer::~FVWRenderer() = default;
+
+void FVWRenderer::SetSettings_RenderThread(const FVWRenderSettings& InSettings)
+{
+	check(IsInRenderingThread());
+	Settings = InSettings;
+}
 
 void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, const FViewInputs& Inputs)
 {
@@ -47,11 +53,26 @@ FVWCommonParams FVWRenderer::CreateCommonParams(const FSceneView& View, const FI
 
 	FVWViewUniformParams ViewUB;
 	ViewUB.ClipToCamRel = static_cast<FMatrix44f>(ViewMat.GetInvTranslatedViewProjectionMatrix());
+	ViewUB.CamPosWorld = VWSpace::UEToWeatherPos(ViewMat.GetViewOrigin());
 	ViewUB.ViewRectMin = ViewRect.Min;
 	ViewUB.ViewSize = ViewRect.Size();
 
+	const FVWAtmosphereSettings& A = Settings.Atmosphere;
+	FVWAtmosphereUniformParams AtmoUB;
+	AtmoUB.GroundRadius = A.GroundRadius;
+	AtmoUB.AtmosphereRadius = A.AtmosphereRadius;
+	AtmoUB.MieCoefficient = A.MieCoefficient;
+	AtmoUB.MieG = A.MieG;
+	AtmoUB.MieColor = A.MieColor;
+	AtmoUB.SunIlluminance = Settings.Lighting.SunIlluminance;
+	AtmoUB.RayleighColor = A.RayleighColor;
+	AtmoUB.APDistanceFactor = Settings.Quality.APDistanceFactor;
+	AtmoUB.SunDir = Settings.Lighting.SunDirW;
+	AtmoUB.ModeFlags = 0;
+
 	FVWCommonParams CommonParams;
 	CommonParams.VWView = TUniformBufferRef<FVWViewUniformParams>::CreateUniformBufferImmediate(ViewUB, EUniformBufferUsage::UniformBuffer_SingleFrame);
+	CommonParams.VWAtmosphere = TUniformBufferRef<FVWAtmosphereUniformParams>::CreateUniformBufferImmediate(AtmoUB, EUniformBufferUsage::UniformBuffer_SingleFrame);
 	return CommonParams;
 }
 
