@@ -1,0 +1,19 @@
+#pragma once
+#include "/Engine/Private/Common.ush"
+
+float2 ViewUVToNDC(float2 UV)
+{
+    // UV 좌상단 0, 0
+    // 클립 공간 위쪽 +1
+    return float2(UV.x * 2.0 - 1.0, 1.0 - UV.y * 2.0);
+}
+float3 ReconstructCamRelPosUE(float2 UV, float DeviceZ)
+{
+    const float4 H = mul(float4(ViewUVToNDC(UV), DeviceZ, 1.0), VWView.ClipToCamRel);
+    return H.xyz / H.w;
+}
+float3 GetRayDirUE(float2 UV)
+{
+    // 메모) 언리얼은 1이 근평면
+    return normalize(ReconstructCamRelPosUE(UV, 1.0));
+}
