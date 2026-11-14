@@ -65,13 +65,13 @@ void UVWSubSystem::PushHelloTint(const FLinearColor& InColor)
 	);
 }
 
-void UVWSubSystem::PushSettings(const FVWRenderSettings& Settings)
+void UVWSubSystem::PushSettings(const FVWRenderSettings& Settings, bool bStaticLUTDirty)
 {
 	ENQUEUE_RENDER_COMMAND(VWPushSettings)(
-		[Extension = ViewExtension, Settings](FRHICommandListImmediate&)
+		[Extension = ViewExtension, Settings, bStaticLUTDirty](FRHICommandListImmediate&)
 		{
 			if (Extension)
-				Extension->GetRenderer_RenderThread().SetSettings_RenderThread(Settings);
+				Extension->GetRenderer_RenderThread().SetSettings_RenderThread(Settings, bStaticLUTDirty);
 		}
 	);
 }

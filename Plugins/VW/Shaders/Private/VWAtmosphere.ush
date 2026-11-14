@@ -1,0 +1,190 @@
+#pragma once
+
+#include "VWCommon.ush"
+
+// H는 높이, 미터 단위
+
+float3 RayleighScattering(float H)
+{
+	return VWAtmosphere.RayleighColor * 1e-6 * exp(-H / 8000.0);
+}
+
+float3 MieScattering(float H)
+{
+	return VWAtmosphere.MieColor * 1e-6 * VWAtmosphere.MieCoefficient * exp(-H / 1200.0);
+}
+
+float3 ScatteringCoefficient(float H)
+{
+	return RayleighScattering(H) + MieScattering(H);
+}
+
+float3 AbsorptionCoefficient(float H)
+{
+	const float3 Mie = float3(4.4, 4.4, 4.4) * 1e-6 * VWAtmosphere.MieCoefficient;
+	const float3 Ozone = float3(0.65, 1.881, 0.085) * 1e-6;
+	return Mie * exp(-H / 1200.0) + Ozone * max(0.0, 1.0 - abs(H - 25000.0) / 15000.0);
+}
+
+float RayleighPhase(float Mu)
+{
+	return 3.0 * (1.0 + Mu * Mu) / (16.0 * VW_PI);
+}
+
+float MiePhase(float Mu, float G)
+{
+	const float G2 = G * G;
+	return 3.0 * (1.0 - G2) * (1.0 + Mu * Mu) / (8.0 * VW_PI * (2.0 + G2) * pow(1.0 + G2 - 2.0 * G * Mu, 1.5));
+}
+
+// 광선-구 교차. 구 내부에서 쏘면 Near 는 음수.
+bool RaySphereIntersect(float3 RayOrigin, float3 RayDir, float3 SphereOrigin, float Radius, out float Near, out float Far)
+{
+	Near = 0.0;
+	Far = 0.0;
+	const float3 RS = SphereOrigin - RayOrigin;
+	const float A2 = dot(RS, RS);
+	const float B = dot(RS, RayDir);
+	const float C2 = A2 - B * B;
+	const float R2 = Radius * Radius;
+	if (C2 > R2)
+	{
+		return false;
+	}
+	const float D = sqrt(R2 - C2); // 구 내부 광선 길이의 절반
+	Near = B - D;
+	Far = B + D;
+	return Far >= 0.0;
+}
+
+float2 GetTransmittanceUV(float3 SamplePos, float3 Dir)
+{
+	const float Ra = VWAtmosphere.AtmosphereRadius;
+	const float Rg = VWAtmosphere.GroundRadius;
+	const float3 ToSample = SamplePos - PlanetCenterW();
+	const float R = length(ToSample);
+	const float Mu = dot(ToSample / R, Dir);
+
+	const float H = sqrt(Ra * Ra - Rg * Rg); // 지평선에서 대기 끝까지의 거리
+	const float Rho = sqrt(max(R * R - Rg * Rg, 0.0)); // 지평선까지의 거리
+	const float DMin = Ra - R; // 머리 위 대기 끝까지
+	const float DMax = Rho + H;	// 지평선 너머 대기 끝까지
+	const float D = max(-R * Mu + sqrt(max(R * R * (Mu * Mu - 1.0) + Ra * Ra, 0.0)), 0.0);
+
+	const float U = (D - DMin) / (DMax - DMin); // 0(머리 위) ~ 1(지평선)
+	const float V = 1.0 - Rho / H;
+	return float2(U, V);
+}
+
+float2 GetTransmittanceMuHeight(float2 UV)
+{
+	const float Ra = VWAtmosphere.AtmosphereRadius;
+	const float Rg = VWAtmosphere.GroundRadius;
+	const float H = sqrt(Ra * Ra - Rg * Rg);
+	const float Rho = UV.y * H;
+	const float R = sqrt(Rho * Rho + Rg * Rg);
+	const float DMin = Ra - R;
+	const float DMax = Rho + H;
+	const float D = lerp(DMin, DMax, UV.x);
+	if (D < 0.000001)
+	{
+		return float2(1.0, R - Rg);
+	}
+	const float Mu = clamp((H * H - Rho * Rho - D * D) / (2.0 * R * D), -1.0, 1.0);
+	return float2(Mu, R - Rg);
+}
+
+float3 SampleTransmittanceLUT(Texture2D LUT, SamplerState LUTSampler, float3 SamplePos, float3 Dir)
+{
+	float2 Size;
+	LUT.GetDimensions(Size.x, Size.y);
+	float2 UV = GetTransmittanceUV(SamplePos, Dir);
+	UV = (0.5 + UV * (Size - 1.0)) / Size;
+	return LUT.SampleLevel(LUTSampler, UV, 0).rgb;
+}
+
+float3 SampleMultiScatteringLUT(Texture2D LUT, SamplerState LUTSampler, float3 SamplePos, float SampleHeight, float3 ToSunDir)
+{
+	const float3 Up = (SamplePos - PlanetCenterW()) / (SampleHeight + VWAtmosphere.GroundRadius);
+	float2 UV;
+	UV.x = dot(Up, ToSunDir) * 0.5 + 0.5;
+	UV.y = saturate(SampleHeight / (VWAtmosphere.AtmosphereRadius - VWAtmosphere.GroundRadius));
+	return LUT.SampleLevel(LUTSampler, UV, 0).rgb;
+}
+
+float3 GetScatteredLight(float3 SamplePos, float SampleHeight, float RayleighPh, float MiePh,
+	Texture2D TransmittanceLUT, Texture2D MultiScatteringLUT, SamplerState LUTSampler)
+{
+	const float3 SunDir = VWAtmosphere.SunDir;
+	float Near, Far;
+	// 태양 쪽이 지면에 가려지면 기여 없음
+	if (RaySphereIntersect(SamplePos, -SunDir, PlanetCenterW(), VWAtmosphere.GroundRadius, Near, Far))
+	{
+		return 0.0;
+	}
+
+	float3 LightViewTransmittance = 1.0;
+	if (RaySphereIntersect(SamplePos, -SunDir, PlanetCenterW(), VWAtmosphere.AtmosphereRadius, Near, Far))
+	{
+		LightViewTransmittance = SampleTransmittanceLUT(TransmittanceLUT, LUTSampler, SamplePos, -SunDir);
+	}
+
+	const float3 Phase = RayleighScattering(SampleHeight) * RayleighPh + MieScattering(SampleHeight) * MiePh;
+	const float3 Single = LightViewTransmittance * Phase;
+	const float3 Multi = ScatteringCoefficient(SampleHeight) * SampleMultiScatteringLUT(MultiScatteringLUT, LUTSampler, SamplePos, SampleHeight, -SunDir);
+	return (Single + Multi) * VWAtmosphere.SunIlluminance;
+}
+
+float GetAerialPerspectiveZ(float Distance)
+{
+	const float MaxDistance = 32000.0;
+	const float Exponent = VWAtmosphere.APDistanceFactor;
+	const float X = saturate(Distance / MaxDistance);
+	return log(1.0 + X * (exp(Exponent) - 1.0)) / Exponent;
+}
+
+int RayCloudShellIntersect(float3 RayOrigin, float3 RayDir, float3 Center, float InnerRadius, float OuterRadius,
+	out float2 Segment0, out float2 Segment1)
+{
+	Segment0 = 0.0;
+	Segment1 = 0.0;
+
+	float OuterNear, OuterFar;
+	if (!RaySphereIntersect(RayOrigin, RayDir, Center, OuterRadius, OuterNear, OuterFar))
+	{
+		return 0;
+	}
+	OuterNear = max(OuterNear, 0.0);
+	if (OuterFar <= OuterNear)
+	{
+		return 0;
+	}
+
+	float InnerNear, InnerFar;
+	if (!RaySphereIntersect(RayOrigin, RayDir, Center, InnerRadius, InnerNear, InnerFar))
+	{
+		Segment0 = float2(OuterNear, OuterFar);
+		return 1;
+	}
+
+	float GroundNear, GroundFar;
+	const bool bGroundHit = RaySphereIntersect(RayOrigin, RayDir, Center, VWAtmosphere.GroundRadius, GroundNear, GroundFar);
+	if (InnerNear > 0.0)
+	{
+		Segment0 = float2(OuterNear, InnerNear);
+		if (bGroundHit && GroundNear > 0.0)
+		{
+			return 1;
+		}
+		Segment1 = float2(InnerFar, OuterFar);
+		return 2;
+	}
+
+	if (bGroundHit)
+	{
+		return 0;
+	}
+
+	Segment0 = float2(InnerFar, OuterFar);
+	return 1;
+}

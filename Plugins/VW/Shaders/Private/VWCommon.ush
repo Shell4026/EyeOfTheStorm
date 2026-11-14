@@ -1,6 +1,8 @@
 #pragma once
 #include "/Engine/Private/Common.ush"
 
+#define VW_PI 3.14159265359
+
 float3 UEToWDir(float3 D)
 {
     return float3(D.x, D.z, D.y);
@@ -47,4 +49,9 @@ float GetSurfaceDistance(float2 UV, float DeviceZ)
     if (IsSky(DeviceZ))
         return 1e10;
     return length(ReconstructCamRelPosUE(UV, DeviceZ)) * 0.01;
+}
+
+float3 PlanetCenterW()
+{
+    return float3(0.0, -VWAtmosphere.GroundRadius, 0.0);
 }

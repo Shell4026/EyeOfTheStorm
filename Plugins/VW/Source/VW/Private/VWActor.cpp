@@ -33,6 +33,8 @@ void AVWActor::PostRegisterAllComponents()
 	if (UVWSubSystem* SubSystem = WorldPtr ? WorldPtr->GetSubsystem<UVWSubSystem>() : nullptr)
 	{
 		SubSystem->RegisterWeatherActor(this);
+		bDirty = true;
+		bHasPushed = false;
 		PushToRenderer();
 	}
 }
@@ -96,7 +98,21 @@ void AVWActor::PushToRenderer()
 	if (SubSystem == nullptr)
 		return;
 	const FVWRenderSettings Settings = VWParameterMapper::ConvertRenderSetting(Artist, Quality);
-	SubSystem->PushSettings(Settings);
+	const bool bStaticLUTDirty = !bHasPushed
+		|| LastAtmosphereThickness != Artist.AtmosphereThickness
+		|| LastRayleigh != Artist.RayleighScatteringStrength
+		|| LastMie != Artist.MieScatteringStrength
+		|| LastMieColor != Artist.MieColor
+		|| LastTransmittanceSteps != Quality.TransmittanceSteps
+		|| LastMultiScatteringSteps != Quality.MultiScatteringSteps;
+	LastAtmosphereThickness = Artist.AtmosphereThickness;
+	LastRayleigh = Artist.RayleighScatteringStrength;
+	LastMie = Artist.MieScatteringStrength;
+	LastMieColor = Artist.MieColor;
+	LastTransmittanceSteps = Quality.TransmittanceSteps;
+	LastMultiScatteringSteps = Quality.MultiScatteringSteps;
+
+	SubSystem->PushSettings(Settings, bStaticLUTDirty);
 	SubSystem->PushHelloTint(HelloTint);
 	
 	const FVector SunDirUE = VWSpace::WeatherToUEDir(Settings.Lighting.SunDirW);
@@ -104,4 +120,5 @@ void AVWActor::PushToRenderer()
 	UpdateSunLight(SunDirUE, Settings.Lighting.SunIlluminance, SunTransmittance);
 
 	bDirty = false;
+	bHasPushed = true;
 }

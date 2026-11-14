@@ -16,13 +16,20 @@ static TAutoConsoleVariable<int32> CVarVWDebugView(
 	EConsoleVariableFlags::ECVF_RenderThreadSafe
 );
 
+namespace
+{
+	constexpr int32 TransmittanceLUTSize = 256;
+	const ETextureCreateFlags UAVTextureFlags = TexCreate_ShaderResource | TexCreate_UAV;
+}
+
 FVWRenderer::FVWRenderer() = default;
 FVWRenderer::~FVWRenderer() = default;
 
-void FVWRenderer::SetSettings_RenderThread(const FVWRenderSettings& InSettings)
+void FVWRenderer::SetSettings_RenderThread(const FVWRenderSettings& InSettings, bool bInStaticLUTDirty)
 {
 	check(IsInRenderingThread());
 	Settings = InSettings;
+	bStaticLUTDirty |= bInStaticLUTDirty;
 }
 
 void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, const FViewInputs& Inputs)
@@ -44,6 +51,11 @@ void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, cons
 	if (DebugMode != 0)
 	{
 		RenderDebugView(GraphBuilder, ShaderMap, Inputs, CommonParams, DebugMode);
+	}
+	else
+	{
+		FRDGTextureRef TransmittanceTex = nullptr;
+		RenderStaticLUTs(GraphBuilder, ShaderMap, CommonParams, TransmittanceTex);
 	}
 }
 
@@ -78,7 +90,6 @@ FVWCommonParams FVWRenderer::CreateCommonParams(const FSceneView& View, const FI
 
 void FVWRenderer::RenderHello(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FViewInputs& Inputs)
 {
-	const ETextureCreateFlags UAVTextureFlags = ETextureCreateFlags::ShaderResource | ETextureCreateFlags::UAV;
 	const FIntPoint ViewSize = Inputs.ViewRect.Size();
 	const FRDGTextureDesc OutDesc = FRDGTextureDesc::Create2D(Inputs.SceneColor->Desc.Extent, Inputs.SceneColor->Desc.Format, FClearValueBinding::Black, UAVTextureFlags);
 	FRDGTextureRef Output = GraphBuilder.CreateTexture(OutDesc, TEXT("VW.HelloOutput"));
@@ -98,7 +109,6 @@ void FVWRenderer::RenderHello(FRDGBuilder& GraphBuilder, FGlobalShaderMap* Shade
 
 void FVWRenderer::RenderDebugView(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FViewInputs& Inputs, const FVWCommonParams& CommonParams, uint32 DebugMode)
 {
-	const ETextureCreateFlags UAVTextureFlags = ETextureCreateFlags::ShaderResource | ETextureCreateFlags::UAV;
 	const FIntPoint ViewSize = Inputs.ViewRect.Size();
 	FRDGTextureRef Output = GraphBuilder.CreateTexture(
 		FRDGTextureDesc::Create2D(Inputs.SceneColor->Desc.Extent, Inputs.SceneColor->Desc.Format, FClearValueBinding::Black, UAVTextureFlags), 
@@ -116,4 +126,32 @@ void FVWRenderer::RenderDebugView(FRDGBuilder& GraphBuilder, FGlobalShaderMap* S
 	FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.DebugView"), ComputeShader, Params, FComputeShaderUtils::GetGroupCount(ViewSize, 8));
 
 	AddCopyTexturePass(GraphBuilder, Output, Inputs.SceneColor, Inputs.ViewRect.Min, Inputs.ViewRect.Min, ViewSize);
+}
+
+void FVWRenderer::RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, FRDGTextureRef& OutTransmittance)
+{
+	if (!bStaticLUTDirty && TransmittanceLUT.IsValid())
+	{
+		OutTransmittance = GraphBuilder.RegisterExternalTexture(TransmittanceLUT);
+		return;
+	}
+	
+	RDG_EVENT_SCOPE(GraphBuilder, "VW.StaticLUTs");
+
+	FRDGTextureRef Transmittance = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
+		FIntPoint(TransmittanceLUTSize), EPixelFormat::PF_FloatRGBA, FClearValueBinding::None, UAVTextureFlags), TEXT("VW.TransmittanceLUT"));
+	{
+		FVWTransmittanceLUTCS::FParameters* Param = GraphBuilder.AllocParameters<FVWTransmittanceLUTCS::FParameters>();
+		Param->Common = Common;
+		Param->Steps = Settings.Quality.TransmittanceSteps;
+		Param->OutLUT = GraphBuilder.CreateUAV(Transmittance);
+
+		TShaderMapRef<FVWTransmittanceLUTCS> CS(ShaderMap);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.TransmittanceLUT"), CS, Param, FComputeShaderUtils::GetGroupCount(FIntPoint(TransmittanceLUTSize), 16));
+	}
+	// 그래프 밖으로 꺼내서 다음 프레임에도 쓴다.
+	TransmittanceLUT = GraphBuilder.ConvertToExternalTexture(Transmittance);
+	bStaticLUTDirty = false;
+
+	OutTransmittance = Transmittance;
 }

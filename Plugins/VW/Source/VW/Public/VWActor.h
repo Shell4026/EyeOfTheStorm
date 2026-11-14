@@ -48,5 +48,13 @@ private:
 	UPROPERTY()
 	TObjectPtr<UBillboardComponent> Sprite;
 #endif
+	float LastAtmosphereThickness = -1.f;
+	float LastRayleigh = -1.f;
+	float LastMie = -1.f;
+	FLinearColor LastMieColor = FLinearColor(-1.f, -1.f, -1.f);
+	int32 LastTransmittanceSteps = -1;
+	int32 LastMultiScatteringSteps = -1;
+
 	bool bDirty = false;
+	bool bHasPushed = false;
 };

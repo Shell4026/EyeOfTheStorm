@@ -21,7 +21,7 @@ public:
 	void UnRegisterWeatherActor(AActor* Actor);
 
 	void PushHelloTint(const FLinearColor& InColor);
-	void PushSettings(const FVWRenderSettings& Settings);
+	void PushSettings(const FVWRenderSettings& Settings, bool bStaticLUTDirty);
 protected:
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 private:
