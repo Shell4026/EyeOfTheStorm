@@ -6,8 +6,9 @@
 #include "VWParameterMapper.h"
 
 #include "Components/BillboardComponent.h"
+#include "Components/LightComponent.h"
 #include "Engine/World.h"
-
+#include "Engine/DirectionalLight.h"
 // Sets default values
 AVWActor::AVWActor()
 {
@@ -71,6 +72,23 @@ void AVWActor::BeginPlay()
 	Super::BeginPlay();
 }
 
+void AVWActor::UpdateSunLight(const FVector& SunDirUE, float SunIlluminance, const FLinearColor& SunTransmittance)
+{
+	if (!SunLight)
+		return;
+
+	SunLight->SetActorRotation(SunDirUE.Rotation());
+	if (ULightComponent* Light = SunLight->GetLightComponent())
+	{
+		const float MaxT = SunTransmittance.GetMax();
+		Light->SetIntensity(SunIlluminance * SunLightIntensityScale * MaxT);
+		if (MaxT > UE_KINDA_SMALL_NUMBER)
+		{
+			Light->SetLightColor(SunTransmittance / MaxT);
+		}
+	}
+}
+
 void AVWActor::PushToRenderer()
 {
 	UWorld* const WorldPtr = GetWorld();
@@ -80,6 +98,10 @@ void AVWActor::PushToRenderer()
 	const FVWRenderSettings Settings = VWParameterMapper::ConvertRenderSetting(Artist, Quality);
 	SubSystem->PushSettings(Settings);
 	SubSystem->PushHelloTint(HelloTint);
+	
+	const FVector SunDirUE = VWSpace::WeatherToUEDir(Settings.Lighting.SunDirW);
+	const FLinearColor SunTransmittance = VWParameterMapper::ComputeSunTransmittance(Settings.Atmosphere, Settings.Lighting.SunDirW);
+	UpdateSunLight(SunDirUE, Settings.Lighting.SunIlluminance, SunTransmittance);
 
 	bDirty = false;
 }

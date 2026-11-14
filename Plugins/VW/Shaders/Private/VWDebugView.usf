@@ -21,9 +21,14 @@ void MainCS(uint3 DispatchThreadID : SV_DispatchThreadID)
     {
         Color = RayDirW * 0.5 + 0.5;
     }
-    else if(DebugMode == 2)
+    else if (DebugMode == 2)
     {
         Color = IsSky(DeviceZ) ? float3(0.1, 0.2, 0.8) : frac(GetSurfaceDistance(UV, DeviceZ) / 100.0).xxx;
+    }
+    else if (DebugMode == 3)
+    {
+        const float CosSun = dot(RayDirW, -VWAtmosphere.SunDir);
+        Color = (CosSun > 0.999 ? 20.0 : 0.0) + (RayDirW.y > 0.0 ? float3(0.2, 0.3, 0.5) : float3(0.1, 0.1, 0.1));
     }
     Output[Pixel] = float4(Color, 1.0);
 }

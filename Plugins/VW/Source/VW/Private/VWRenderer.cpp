@@ -12,7 +12,7 @@ static TAutoConsoleVariable<int32> CVarVWHello(
 	EConsoleVariableFlags::ECVF_RenderThreadSafe
 );
 static TAutoConsoleVariable<int32> CVarVWDebugView(
-	TEXT("r.VW.DebugView"), 0, TEXT("1 = 광선 방향, 2 = 표면 거리"),
+	TEXT("r.VW.DebugView"), 0, TEXT("1 = 광선 방향, 2 = 표면 거리, 3 = 태양 원반"),
 	EConsoleVariableFlags::ECVF_RenderThreadSafe
 );
 
