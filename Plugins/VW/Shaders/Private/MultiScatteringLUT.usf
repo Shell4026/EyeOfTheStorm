@@ -1,0 +1,89 @@
+#include "VWAtmosphere.ush"
+
+uint Steps;
+Texture2D<float4> TransmittanceLUT;
+SamplerState LinearClampSampler;
+RWTexture2D<float4> OutLUT;
+
+float3 InScatteringMS(float3 Start, float3 Dir, float Distance, float3 ToSunDir, inout float3 Fms)
+{
+	const float3 Center = PlanetCenterW();
+	const float StepSize = Distance / Steps;
+	const float Phase = 1.0 / (4.0 * VW_PI); // 등방성
+
+	float3 Transmittance = 1.0;
+	float3 Scattering = 0.0;
+	for (uint i = 0; i < Steps; ++i)
+	{
+		const float3 SamplePos = Start + Dir * (i + 0.5) * StepSize;
+		const float SampleHeight = length(SamplePos - Center) - VWAtmosphere.GroundRadius;
+
+		const float3 SigmaS = ScatteringCoefficient(SampleHeight);
+		const float3 SigmaT = SigmaS + AbsorptionCoefficient(SampleHeight);
+		const float3 StepT = exp(-SigmaT * StepSize);
+
+		float3 LightViewTransmittance = 0.0;
+		float Near, Far;
+		if (!RaySphereIntersect(SamplePos, ToSunDir, Center, VWAtmosphere.GroundRadius, Near, Far))
+		{
+			LightViewTransmittance = SampleTransmittanceLUT(TransmittanceLUT, LinearClampSampler, SamplePos, ToSunDir);
+		}
+
+		Scattering += Transmittance * ((1.0 - StepT) * (LightViewTransmittance * SigmaS * Phase) / max(SigmaT, 1e-6));
+		Fms += Transmittance * ((1.0 - StepT) * SigmaS / max(SigmaT, 1e-6));
+		Transmittance *= StepT;
+	}
+	return Scattering;
+}
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint Width, Height;
+	OutLUT.GetDimensions(Width, Height);
+	if (DispatchThreadId.x >= Width || DispatchThreadId.y >= Height)
+	{
+		return;
+	}
+
+	const float2 UV = (float2(DispatchThreadId.xy) + 0.5) / float2(Width, Height);
+	const float Mu = UV.x * 2.0 - 1.0;
+	const float SampleHeight = UV.y * (VWAtmosphere.AtmosphereRadius - VWAtmosphere.GroundRadius);
+
+	const float3 Center = PlanetCenterW();
+	const float3 SamplePos = float3(0.0, SampleHeight, 0.0);
+	const float3 ToSunDir = float3(sqrt(max(0.0, 1.0 - Mu * Mu)), Mu, 0.0);
+
+	float3 L2 = 0.0;
+	float3 Fms = 0.0;
+	for (int i = 0; i < 8; ++i)
+	{
+		for (int j = 0; j < 8; ++j)
+		{
+			// 구면을 8x8 로 균일 샘플링
+			const float U = (i + 0.5) / 8.0;
+			const float V = (j + 0.5) / 8.0;
+			const float Theta = 2.0 * VW_PI * U;
+			const float Z = 1.0 - 2.0 * V;
+			const float R = sqrt(max(1.0 - Z * Z, 0.0));
+			const float3 Dir = float3(R * cos(Theta), R * sin(Theta), Z);
+
+			float Near, Far;
+			float Distance = 0.0;
+			if (RaySphereIntersect(SamplePos, Dir, Center, VWAtmosphere.GroundRadius, Near, Far))
+			{
+				Distance = Near;
+			}
+			else if (RaySphereIntersect(SamplePos, Dir, Center, VWAtmosphere.AtmosphereRadius, Near, Far))
+			{
+				Distance = Far;
+			}
+			L2 += InScatteringMS(SamplePos, Dir, Distance, ToSunDir, Fms);
+		}
+	}
+	L2 /= 64.0;
+	Fms /= 64.0;
+
+	const float3 PsiMS = L2 / max(1.0 - Fms, 1e-4);
+	OutLUT[DispatchThreadId.xy] = float4(PsiMS, 1.0);
+}

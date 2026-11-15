@@ -19,7 +19,13 @@ static TAutoConsoleVariable<int32> CVarVWDebugView(
 namespace
 {
 	constexpr int32 TransmittanceLUTSize = 256;
+	constexpr int32 MultiScatteringLUTSize = 128;
 	const ETextureCreateFlags UAVTextureFlags = TexCreate_ShaderResource | TexCreate_UAV;
+
+	FRHISamplerState* GetLinearClampSampler()
+	{
+		return TStaticSamplerState<ESamplerFilter::SF_Bilinear, ESamplerAddressMode::AM_Clamp, ESamplerAddressMode::AM_Clamp, ESamplerAddressMode::AM_Clamp>::GetRHI();
+	}
 }
 
 FVWRenderer::FVWRenderer() = default;
@@ -54,8 +60,8 @@ void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, cons
 	}
 	else
 	{
-		FRDGTextureRef TransmittanceTex = nullptr;
-		RenderStaticLUTs(GraphBuilder, ShaderMap, CommonParams, TransmittanceTex);
+		OutputLUT Outputs{};
+		RenderStaticLUTs(GraphBuilder, ShaderMap, CommonParams, Outputs);
 	}
 }
 
@@ -128,11 +134,12 @@ void FVWRenderer::RenderDebugView(FRDGBuilder& GraphBuilder, FGlobalShaderMap* S
 	AddCopyTexturePass(GraphBuilder, Output, Inputs.SceneColor, Inputs.ViewRect.Min, Inputs.ViewRect.Min, ViewSize);
 }
 
-void FVWRenderer::RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, FRDGTextureRef& OutTransmittance)
+void FVWRenderer::RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, OutputLUT& Output)
 {
-	if (!bStaticLUTDirty && TransmittanceLUT.IsValid())
+	if (!bStaticLUTDirty && TransmittanceLUT.IsValid() && MultiScatteringLUT.IsValid())
 	{
-		OutTransmittance = GraphBuilder.RegisterExternalTexture(TransmittanceLUT);
+		Output.Transmittance = GraphBuilder.RegisterExternalTexture(TransmittanceLUT);
+		Output.MultiScattering = GraphBuilder.RegisterExternalTexture(MultiScatteringLUT);
 		return;
 	}
 	
@@ -149,9 +156,27 @@ void FVWRenderer::RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* 
 		TShaderMapRef<FVWTransmittanceLUTCS> CS(ShaderMap);
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.TransmittanceLUT"), CS, Param, FComputeShaderUtils::GetGroupCount(FIntPoint(TransmittanceLUTSize), 16));
 	}
+
+	FRDGTextureRef MultiScattering = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
+		FIntPoint(MultiScatteringLUTSize), EPixelFormat::PF_FloatRGBA, FClearValueBinding::None, UAVTextureFlags), TEXT("VW.MultiScatteringLUT"));
+	{
+		FVWMultiScatteringLUTCS::FParameters* Param = GraphBuilder.AllocParameters<FVWMultiScatteringLUTCS::FParameters>();
+		Param->Common = Common;
+		Param->Steps = Settings.Quality.MultiScatteringSteps;
+		Param->TransmittanceLUT = Transmittance;
+		Param->LinearClampSampler = GetLinearClampSampler();
+		Param->OutLUT = GraphBuilder.CreateUAV(MultiScattering);
+
+		TShaderMapRef<FVWMultiScatteringLUTCS> CS(ShaderMap);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.MultiScatteringLUT"), CS, Param, FComputeShaderUtils::GetGroupCount(FIntPoint(MultiScatteringLUTSize), 16));
+	}
+
 	// 그래프 밖으로 꺼내서 다음 프레임에도 쓴다.
 	TransmittanceLUT = GraphBuilder.ConvertToExternalTexture(Transmittance);
+	MultiScatteringLUT = GraphBuilder.ConvertToExternalTexture(MultiScattering);
+	
 	bStaticLUTDirty = false;
 
-	OutTransmittance = Transmittance;
+	Output.Transmittance = Transmittance;
+	Output.MultiScattering = Transmittance;
 }

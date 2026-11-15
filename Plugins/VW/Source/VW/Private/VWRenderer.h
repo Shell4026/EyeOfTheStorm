@@ -29,14 +29,20 @@ public:
 
 	void Render(FRDGBuilder& GraphBuilder, const FSceneView& View, const FViewInputs& Inputs);
 private:
+	struct OutputLUT
+	{
+		FRDGTextureRef Transmittance = nullptr;
+		FRDGTextureRef MultiScattering = nullptr;
+	};
 	FVWCommonParams CreateCommonParams(const FSceneView& View, const FIntRect& ViewRect) const;
 	void RenderHello(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FViewInputs& Inputs);
 	void RenderDebugView(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FViewInputs& Inputs, const FVWCommonParams& CommonParams, uint32 DebugMode);
-	void RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, FRDGTextureRef& OutTransmittance);
+	void RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, OutputLUT& Output);
 private:
 	FLinearColor HelloTint = FLinearColor{ 1.f, 0.3f, 0.3f };
 	FVWRenderSettings Settings;
 	bool bStaticLUTDirty = false;
 
 	TRefCountPtr<IPooledRenderTarget> TransmittanceLUT;
+	TRefCountPtr<IPooledRenderTarget> MultiScatteringLUT;
 };
