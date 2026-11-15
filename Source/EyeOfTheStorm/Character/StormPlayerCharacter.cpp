@@ -28,7 +28,7 @@ AStormPlayerCharacter::AStormPlayerCharacter()
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	Movement->bOrientRotationToMovement = true;
 	Movement->RotationRate = FRotator(0.f, 600.f, 0.f);
-	Movement->MaxWalkSpeed = 450.f;
+	Movement->MaxWalkSpeed = WalkSpeed;
 	Movement->BrakingDecelerationWalking = 2000.f;
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -68,6 +68,11 @@ void AStormPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	{
 		Input->BindAction(LockOnAction, ETriggerEvent::Started, this, &AStormPlayerCharacter::ToggleLockOn);
 	}
+	if (RunAction)
+	{
+		Input->BindAction(RunAction, ETriggerEvent::Started, this, &AStormPlayerCharacter::Run);
+		Input->BindAction(RunAction, ETriggerEvent::Completed, this, &AStormPlayerCharacter::RunCompleted);
+	}
 }
 
 void AStormPlayerCharacter::NotifyControllerChanged()
@@ -104,6 +109,14 @@ void AStormPlayerCharacter::BeginPlay()
 	LockOn->OnTargetChanged.AddDynamic(this, &AStormPlayerCharacter::HandleLockOnTargetChanged);
 	ApplyDefaultMorphTargets();
 	UpdateRotationMode();
+}
+
+void AStormPlayerCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	const float Target = bIsRunning ? RunSpeed : WalkSpeed;
+	Movement->MaxWalkSpeed = FMath::FInterpConstantTo(Movement->MaxWalkSpeed, Target, DeltaSeconds, SpeedChangeRate);
 }
 
 void AStormPlayerCharacter::HandleDeath(AActor* Killer)
@@ -174,6 +187,16 @@ void AStormPlayerCharacter::ToggleLockOn()
 	}
 }
 
+void AStormPlayerCharacter::Run()
+{
+	bIsRunning = true;
+}
+
+void AStormPlayerCharacter::RunCompleted()
+{
+	bIsRunning = false;
+}
+
 void AStormPlayerCharacter::StartDodge(const FVector& Direction, bool bFaceDirection)
 {
 	bIsDodging = true;
@@ -183,14 +206,21 @@ void AStormPlayerCharacter::StartDodge(const FVector& Direction, bool bFaceDirec
 		SetActorRotation(Direction.Rotation());
 	}
 
+	// 달리는 중이면 더 멀리, 더 빨리 구른다. 몽타주와 이동이 같이 끝나도록 시간은 재생 속도 배율로 나눈다.
+	const bool bRunDodge = bIsRunning && GetVelocity().Size2D() > WalkSpeed;
+	const float Distance = bRunDodge ? DodgeDistance * RunDodgeDistanceScale : DodgeDistance;
+	const float RateScale = bRunDodge ? RunDodgePlayRateScale : 1.f;
+	const float Duration = DodgeDuration / RateScale;
+	const float PlayRate = DodgeMontagePlayRate * RateScale;
+
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 
 	TSharedPtr<FRootMotionSource_ConstantForce> Force = MakeShared<FRootMotionSource_ConstantForce>();
 	Force->InstanceName = TEXT("StormDodge");
 	Force->AccumulateMode = ERootMotionAccumulateMode::Override;
 	Force->Priority = 5;
-	Force->Force = Direction * (DodgeDistance / DodgeDuration);
-	Force->Duration = DodgeDuration;
+	Force->Force = Direction * (Distance / Duration);
+	Force->Duration = Duration;
 	Force->StrengthOverTime = DodgeSpeedCurve;
 	Force->Settings.SetFlag(ERootMotionSourceSettingsFlags::IgnoreZAccumulate);
 	Force->FinishVelocityParams.Mode = ERootMotionFinishVelocityMode::ClampVelocity;
@@ -199,14 +229,14 @@ void AStormPlayerCharacter::StartDodge(const FVector& Direction, bool bFaceDirec
 
 	if (DodgeMontage)
 	{
-		PlayAnimMontage(DodgeMontage, DodgeMontagePlayRate);
+		PlayAnimMontage(DodgeMontage, PlayRate);
 	}
 
 	FTimerManager& Timers = GetWorldTimerManager();
-	Timers.SetTimer(DodgeEndTimer, this, &AStormPlayerCharacter::EndDodge, DodgeDuration, false);
+	Timers.SetTimer(DodgeEndTimer, this, &AStormPlayerCharacter::EndDodge, Duration, false);
 
-	const float InvStart = FMath::Clamp(DodgeInvincibleStart, 0.f, DodgeDuration);
-	const float InvEnd = FMath::Clamp(DodgeInvincibleEnd, InvStart, DodgeDuration);
+	const float InvStart = FMath::Clamp(DodgeInvincibleStart, 0.f, Duration);
+	const float InvEnd = FMath::Clamp(DodgeInvincibleEnd, InvStart, Duration);
 	if (InvEnd > InvStart)
 	{
 		if (InvStart <= 0.f)

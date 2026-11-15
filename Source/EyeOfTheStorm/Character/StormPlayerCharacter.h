@@ -31,6 +31,7 @@ public:
 	bool IsLockedOn() const;
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void HandleDeath(AActor* Killer) override;
 private:
 	void Move(const FInputActionValue& Value);
@@ -38,6 +39,8 @@ private:
 	void Look(const FInputActionValue& Value);
 	void Dodge();
 	void ToggleLockOn();
+	void Run();
+	void RunCompleted();
 
 	void StartDodge(const FVector& Direction, bool bFaceDirection);
 	void EndDodge();
@@ -74,10 +77,26 @@ protected:
 	TObjectPtr<UInputAction> DodgeAction;
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Input")
 	TObjectPtr<UInputAction> LockOnAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Input")
+	TObjectPtr<UInputAction> RunAction;
+
+	// 이동
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Move", meta = (ClampMin = "0"))
+	float WalkSpeed = 200.f; // 200cm/s
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Move", meta = (ClampMin = "0"))
+	float RunSpeed = 400.f; // 400cm/s
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Move", meta = (ClampMin = "1"))
+	float SpeedChangeRate = 400.f; // 400cm/s^2
 
 	// 회피
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0"))
 	float DodgeDistance = 450.f; // 450cm
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "1"))
+	float RunDodgeDistanceScale = 1.5f; // 1.5배 (달리는 중 회피 거리)
+	// 달리는 중 회피의 몽타주 재생 속도 배율. 회피 시간은 이 배율로 나눠 짧아지고, 무적 길이(초)는 그대로다.
+	// 회피 시간이 DodgeInvincibleEnd보다 짧아지면 무적 끝이 잘린다 (기본값 기준 1.4배까지 안전).
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "1"))
+	float RunDodgePlayRateScale = 1.2f; // 1.2배
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0.05"))
 	float DodgeDuration = 0.5f; // 0.5초
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0"))
@@ -101,6 +120,7 @@ private:
 
 	bool bIsDodging = false;
 	bool bDodgeInvincible = false;
+	bool bIsRunning = false;
 	uint16 DodgeRootMotionID = 0;
 
 	FTimerHandle DodgeEndTimer;
