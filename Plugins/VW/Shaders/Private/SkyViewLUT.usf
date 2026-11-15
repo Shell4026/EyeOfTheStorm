@@ -1,0 +1,92 @@
+#include "VWAtmosphere.ush"
+
+uint Steps;
+Texture2D<float4> TransmittanceLUT;
+Texture2D<float4> MultiScatteringLUT;
+SamplerState LinearClampSampler;
+RWTexture2D<float4> OutLUT;
+
+// 지평선 근처에 해상도를 몰아주는 비선형 위도 (-PI/2 ~ PI/2)
+float GetNonlinearLatitude(float V)
+{
+	const float X = 2.0 * V - 1.0;
+	return VW_PI / 2.0 * sign(X) * X * X;
+}
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint Width, Height;
+	OutLUT.GetDimensions(Width, Height);
+	if (DispatchThreadId.x >= Width || DispatchThreadId.y >= Height)
+	{
+		return;
+	}
+
+	float2 UV = (float2(DispatchThreadId.xy) + 0.5) / float2(Width, Height);
+	UV.y = 1.0 - UV.y;
+
+	const float3 Center = PlanetCenterW();
+	const float3 CamPos = VWView.CamPosWorld;
+	const float3 SunDir = VWAtmosphere.SunDir;
+	const float3 CamToSun = -SunDir;
+
+	// 태양 방향을 경도 0 으로 두는 로컬 좌표계
+	const float3 Up = normalize(CamPos - Center);
+	float3 Forward = CamToSun - Up * dot(CamToSun, Up);
+	Forward = dot(Forward, Forward) > 1e-8 ? normalize(Forward) : normalize(cross(Up, float3(1.0, 0.0, 0.0)));
+	const float3 Right = cross(Forward, Up);
+
+	const float Longitude = lerp(-VW_PI, VW_PI, UV.x);
+	const float Latitude = GetNonlinearLatitude(UV.y);
+	const float3 HorizonDir = cos(Longitude) * Forward + sin(Longitude) * Right;
+	const float3 RayDir = cos(Latitude) * HorizonDir + sin(Latitude) * Up;
+
+	float NearAtmo, FarAtmo;
+	if (!RaySphereIntersect(CamPos, RayDir, Center, VWAtmosphere.AtmosphereRadius, NearAtmo, FarAtmo))
+	{
+		OutLUT[DispatchThreadId.xy] = float4(0.0, 0.0, 0.0, 1.0); // 우주
+		return;
+	}
+
+	const float RayStart = max(NearAtmo, 0.0);
+	float RayEnd = FarAtmo;
+	float NearGround, FarGround;
+	if (RaySphereIntersect(CamPos, RayDir, Center, VWAtmosphere.GroundRadius, NearGround, FarGround))
+	{
+		RayEnd = min(RayEnd, NearGround); // 땅에 닿으면 땅까지만
+	}
+	if (RayEnd <= RayStart)
+	{
+		OutLUT[DispatchThreadId.xy] = float4(0.0, 0.0, 0.0, 1.0);
+		return;
+	}
+
+	const float Mu = dot(-RayDir, SunDir);
+	const float RayleighPh = RayleighPhase(Mu);
+	const float MiePh = MiePhase(Mu, VWAtmosphere.MieG);
+
+	const float3 Start = CamPos + RayDir * RayStart;
+	const float StepSize = (RayEnd - RayStart) / Steps;
+
+	float3 InScattering = 0.0;
+	float3 SigmaSum = 0.0;
+	float3 Transmittance = 1.0;
+	for (uint i = 0; i < Steps; ++i)
+	{
+		const float3 SamplePos = Start + RayDir * StepSize * (i + 0.5);
+		const float SampleHeight = length(SamplePos - Center) - VWAtmosphere.GroundRadius;
+		if (SampleHeight < 0.0)
+		{
+			break;
+		}
+
+		Transmittance = exp(-SigmaSum);
+		SigmaSum += (ScatteringCoefficient(SampleHeight) + AbsorptionCoefficient(SampleHeight)) * StepSize;
+
+		InScattering += Transmittance * GetScatteredLight(SamplePos, SampleHeight, RayleighPh, MiePh,
+			TransmittanceLUT, MultiScatteringLUT, LinearClampSampler) * StepSize;
+	}
+
+	OutLUT[DispatchThreadId.xy] = float4(InScattering, dot(Transmittance, 1.0 / 3.0));
+}

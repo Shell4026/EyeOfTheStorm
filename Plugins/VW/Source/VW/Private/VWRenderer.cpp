@@ -8,23 +8,26 @@
 #include <SceneView.h>
 
 static TAutoConsoleVariable<int32> CVarVWHello(
-	TEXT("r.VW.Hello"), 0, TEXT("1 = 화면을 붉게함"),
-	EConsoleVariableFlags::ECVF_RenderThreadSafe
-);
+	TEXT("r.VW.Hello"), 0, TEXT("1 = 화면을 붉게함"), EConsoleVariableFlags::ECVF_RenderThreadSafe);
 static TAutoConsoleVariable<int32> CVarVWDebugView(
-	TEXT("r.VW.DebugView"), 0, TEXT("1 = 광선 방향, 2 = 표면 거리, 3 = 태양 원반"),
-	EConsoleVariableFlags::ECVF_RenderThreadSafe
-);
+	TEXT("r.VW.DebugView"), 0, TEXT("1 = 광선 방향, 2 = 표면 거리, 3 = 태양 원반"), EConsoleVariableFlags::ECVF_RenderThreadSafe);
+static TAutoConsoleVariable<int32> CVarVWEnable(
+	TEXT("r.VW.Enable"), 1, TEXT("VolumetricWeather 렌더링 사용 여부"), EConsoleVariableFlags::ECVF_RenderThreadSafe);
 
 namespace
 {
 	constexpr int32 TransmittanceLUTSize = 256;
 	constexpr int32 MultiScatteringLUTSize = 128;
+	const FIntPoint SkyViewLUTSize(200, 400);
 	const ETextureCreateFlags UAVTextureFlags = TexCreate_ShaderResource | TexCreate_UAV;
 
 	FRHISamplerState* GetLinearClampSampler()
 	{
 		return TStaticSamplerState<ESamplerFilter::SF_Bilinear, ESamplerAddressMode::AM_Clamp, ESamplerAddressMode::AM_Clamp, ESamplerAddressMode::AM_Clamp>::GetRHI();
+	}
+	FRHISamplerState* GetSkyViewSampler()
+	{
+		return TStaticSamplerState<ESamplerFilter::SF_Bilinear, ESamplerAddressMode::AM_Wrap, ESamplerAddressMode::AM_Clamp, ESamplerAddressMode::AM_Clamp>::GetRHI();
 	}
 }
 
@@ -40,6 +43,9 @@ void FVWRenderer::SetSettings_RenderThread(const FVWRenderSettings& InSettings, 
 
 void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, const FViewInputs& Inputs)
 {
+	if (CVarVWEnable.GetValueOnRenderThread() == 0)
+		return;
+
 	const FIntPoint ViewSize = Inputs.ViewRect.Size();
 	if (ViewSize.X <= 0 || ViewSize.Y <= 0 || Inputs.SceneColor == nullptr || Inputs.SceneDepth == nullptr)
 		return;
@@ -62,6 +68,8 @@ void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, cons
 	{
 		OutputLUT Outputs{};
 		RenderStaticLUTs(GraphBuilder, ShaderMap, CommonParams, Outputs);
+		FRDGTextureRef SkyViewTex = RenderSkyViewLUT(GraphBuilder, ShaderMap, CommonParams, Outputs.Transmittance, Outputs.MultiScattering);
+		RenderComposite(GraphBuilder, ShaderMap, CommonParams, Inputs, SkyViewTex);
 	}
 }
 
@@ -179,4 +187,43 @@ void FVWRenderer::RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* 
 
 	Output.Transmittance = Transmittance;
 	Output.MultiScattering = Transmittance;
+}
+
+FRDGTextureRef FVWRenderer::RenderSkyViewLUT(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, FRDGTextureRef Transmittance, FRDGTextureRef MultiScattering)
+{
+	FRDGTextureRef SkyView = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
+		SkyViewLUTSize, EPixelFormat::PF_FloatRGBA, FClearValueBinding::None, UAVTextureFlags), TEXT("VW.SkyViewLUT"));
+
+	FVWSkyViewLUTCS::FParameters* Param = GraphBuilder.AllocParameters<FVWSkyViewLUTCS::FParameters>();
+	Param->Common = Common;
+	Param->Steps = Settings.Quality.SkyViewSteps;
+	Param->TransmittanceLUT = Transmittance;
+	Param->MultiScatteringLUT = MultiScattering;
+	Param->LinearClampSampler = GetLinearClampSampler();
+	Param->OutLUT = GraphBuilder.CreateUAV(SkyView);
+
+	TShaderMapRef<FVWSkyViewLUTCS> CS(ShaderMap);
+	FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.SkyViewLUT"), CS, Param, FComputeShaderUtils::GetGroupCount(SkyViewLUTSize, 16));
+	return SkyView;
+}
+
+void FVWRenderer::RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef SkyView)
+{
+	const FIntPoint ViewSize = Inputs.ViewRect.Size();
+	FRDGTextureRef Output = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
+		Inputs.SceneColor->Desc.Extent, Inputs.SceneColor->Desc.Format, FClearValueBinding::Black, UAVTextureFlags), TEXT("VW.Composite"));
+
+	FVWCompositeCS::FParameters* Param = GraphBuilder.AllocParameters<FVWCompositeCS::FParameters>();
+	Param->Common = Common;
+	Param->SceneColorTexture = Inputs.SceneColor;
+	Param->SceneDepthTexture = Inputs.SceneDepth;
+	Param->SkyViewLUT = SkyView;
+	Param->SkyViewSampler = GetSkyViewSampler();
+	Param->Output = GraphBuilder.CreateUAV(Output);
+
+	TShaderMapRef<FVWCompositeCS> CS(ShaderMap);
+	FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.Composite"), CS, Param, FComputeShaderUtils::GetGroupCount(ViewSize, 8));
+
+	// SceneColor 로 복사
+	AddCopyTexturePass(GraphBuilder, Output, Inputs.SceneColor, Inputs.ViewRect.Min, Inputs.ViewRect.Min, ViewSize);
 }

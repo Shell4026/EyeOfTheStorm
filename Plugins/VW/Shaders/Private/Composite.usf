@@ -1,0 +1,74 @@
+#include "VWAtmosphere.ush"
+
+Texture2D<float4> SceneColorTexture;
+Texture2D<float> SceneDepthTexture;
+Texture2D<float4> SkyViewLUT;
+SamplerState SkyViewSampler;
+RWTexture2D<float4> Output;
+
+float4 SampleSkyView(float3 RayDir)
+{
+	const float3 CamToSun = -VWAtmosphere.SunDir;
+	const float3 Up = normalize(VWView.CamPosWorld - PlanetCenterW());
+	float3 Forward = CamToSun - Up * dot(CamToSun, Up);
+	Forward = dot(Forward, Forward) > 1e-8 ? normalize(Forward) : normalize(cross(Up, float3(1.0, 0.0, 0.0)));
+	const float3 Right = cross(Forward, Up);
+
+	const float Latitude = asin(clamp(dot(RayDir, Up), -1.0, 1.0));
+	const float3 Horizontal = normalize(RayDir - Up * dot(RayDir, Up));
+	const float Longitude = atan2(dot(Horizontal, Right), dot(Horizontal, Forward));
+
+	float2 SkyUV;
+	SkyUV.x = Longitude / (2.0 * VW_PI) + 0.5;
+	SkyUV.y = 1.0 - (0.5 + 0.5 * sign(Latitude) * sqrt(abs(Latitude) / (VW_PI * 0.5)));
+	return SkyViewLUT.SampleLevel(SkyViewSampler, SkyUV, 0);
+}
+
+float3 RenderSun(float3 RayDir)
+{
+	float Near, Far;
+	if (RaySphereIntersect(VWView.CamPosWorld, RayDir, PlanetCenterW(), VWAtmosphere.GroundRadius, Near, Far))
+	{
+		return 0.0;
+	}
+	const float CosAngle = dot(RayDir, -VWAtmosphere.SunDir);
+	return VWAtmosphere.SunIlluminance * step(cos(radians(0.52)), CosAngle);
+}
+
+[numthreads(8, 8, 1)]
+void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+    if (any(DispatchThreadId.xy >= uint2(VWView.ViewSize)))
+    {
+        return;
+    }
+
+    const int2 Pixel = VWView.ViewRectMin + int2(DispatchThreadId.xy);
+    const float2 UV = (float2(DispatchThreadId.xy) + 0.5) / float2(VWView.ViewSize);
+    const float3 RayDir = GetRayDirW(UV);
+    const float3 CamPos = VWView.CamPosWorld;
+    const float3 Center = PlanetCenterW();
+    const float4 SceneColor = SceneColorTexture[Pixel];
+
+    float NearAtmo, FarAtmo;
+    if (!RaySphereIntersect(CamPos, RayDir, Center, VWAtmosphere.AtmosphereRadius, NearAtmo, FarAtmo))
+    {
+        Output[Pixel] = SceneColor; // 대기 밖 (우주)
+        return;
+    }
+
+    const float DeviceZ = SceneDepthTexture[Pixel];
+
+    float3 Background;
+    if (!IsSky(DeviceZ))
+    {
+        Background = SceneColor.rgb;
+    }
+    else
+    {
+        Background = SampleSkyView(RayDir).rgb + RenderSun(RayDir);
+    }
+
+    float3 Result = Background;
+    Output[Pixel] = float4(max(Result, 0.0), SceneColor.a);
+}
