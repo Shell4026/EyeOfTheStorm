@@ -43,11 +43,14 @@ public:
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storm|Health", meta = (ClampMin = "1"))
 	float MaxHealth = 100.f;
+	// 체력 비율 경계 (0~1). 보스는 0.66, 0.33. 순서 상관없음
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storm|Health", meta = (ClampMin = "0", ClampMax = "1"))
-	TArray<float> Thresholds; // 체력 비율 경계 (0~1). 보스는 0.66, 0.33. 순서 상관없음
+	TArray<float> Thresholds;
 private:
 	UPROPERTY(VisibleInstanceOnly, Category = "Storm|Health")
 	float Health = 0.f;
-	TArray<float> SortedThresholds; // Thresholds를 내림차순으로 정렬한 것
-	int32 NextThresholdIndex = 0; // 다음에 넘을 경계의 인덱스
+	// Thresholds를 내림차순으로 정렬한 것
+	TArray<float> SortedThresholds;
+	// 다음에 넘을 경계의 인덱스
+	int32 NextThresholdIndex = 0;
 };
