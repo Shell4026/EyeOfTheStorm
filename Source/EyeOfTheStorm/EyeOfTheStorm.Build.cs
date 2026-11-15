@@ -12,6 +12,9 @@ public class EyeOfTheStorm : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
+		// "Character/StormCharacterBase.h"처럼 모듈 루트 기준으로 include 한다.
+		PublicIncludePaths.Add(ModuleDirectory);
+
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		
