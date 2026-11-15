@@ -38,6 +38,9 @@ AStormPlayerCharacter::AStormPlayerCharacter()
 	CameraBoom->TargetArmLength = 400.f;
 	CameraBoom->SocketOffset = FVector(0.f, 0.f, 60.f);
 	CameraBoom->bUsePawnControlRotation = true;
+	// 붐이 캐릭터 회전을 물려받지 않게 한다. 카메라 위치는 붐 기준 상대값으로 저장되는데, 붐이 틱한 뒤
+	// 타이머(버퍼된 회피)가 캐릭터를 돌리면 카메라 갱신 전까지 한 프레임 카메라가 같이 돌아 화면이 튄다.
+	CameraBoom->SetUsingAbsoluteRotation(true);
 	CameraBoom->bEnableCameraLag = true;
 	CameraBoom->CameraLagSpeed = 12.f;
 
