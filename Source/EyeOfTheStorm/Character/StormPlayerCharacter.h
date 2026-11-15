@@ -105,8 +105,9 @@ protected:
 	float DodgeInvincibleEnd = 0.35f; // 0.35초
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge")
 	TObjectPtr<UCurveFloat> DodgeSpeedCurve;
+	// cm/s (입력 없이 뒤로 빠질 때 끝 속도. 방향 회피는 걷기/달리기 속도로 끝난다)
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0"))
-	float DodgeExitSpeed = 150.f; // 150cm/s
+	float DodgeExitSpeed = 150.f;
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge")
 	TObjectPtr<UAnimMontage> DodgeMontage;
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0.1"))

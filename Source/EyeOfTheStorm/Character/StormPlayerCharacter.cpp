@@ -209,6 +209,7 @@ void AStormPlayerCharacter::StartDodge(const FVector& Direction, bool bFaceDirec
 	// 달리는 중이면 더 멀리, 더 빨리 구른다. 몽타주와 이동이 같이 끝나도록 시간은 재생 속도 배율로 나눈다.
 	const bool bRunDodge = bIsRunning && GetVelocity().Size2D() > WalkSpeed;
 	const float Distance = bRunDodge ? DodgeDistance * RunDodgeDistanceScale : DodgeDistance;
+	
 	const float RateScale = bRunDodge ? RunDodgePlayRateScale : 1.f;
 	const float Duration = DodgeDuration / RateScale;
 	const float PlayRate = DodgeMontagePlayRate * RateScale;
@@ -224,7 +225,9 @@ void AStormPlayerCharacter::StartDodge(const FVector& Direction, bool bFaceDirec
 	Force->StrengthOverTime = DodgeSpeedCurve;
 	Force->Settings.SetFlag(ERootMotionSourceSettingsFlags::IgnoreZAccumulate);
 	Force->FinishVelocityParams.Mode = ERootMotionFinishVelocityMode::ClampVelocity;
-	Force->FinishVelocityParams.ClampVelocity = DodgeExitSpeed;
+
+	const float ExitSpeed = !bFaceDirection ? DodgeExitSpeed : (bRunDodge ? RunSpeed : WalkSpeed);
+	Force->FinishVelocityParams.ClampVelocity = ExitSpeed;
 	DodgeRootMotionID = Movement->ApplyRootMotionSource(Force);
 
 	if (DodgeMontage)
@@ -268,6 +271,12 @@ void AStormPlayerCharacter::EndDodge()
 	{
 		GetCharacterMovement()->RemoveRootMotionSourceByID(DodgeRootMotionID);
 		DodgeRootMotionID = 0;
+	}
+
+	if (MoveInput.IsNearlyZero())
+	{
+		UCharacterMovementComponent* Movement = GetCharacterMovement();
+		Movement->Velocity = Movement->Velocity.GetClampedToMaxSize2D(DodgeExitSpeed);
 	}
 
 	bIsDodging = false;
