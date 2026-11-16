@@ -41,21 +41,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Storm|LockOn")
 	FStormLockOnTargetChangedSignature OnTargetChanged;
 protected:
-	// 2500cm
 	UPROPERTY(EditAnywhere, Category = "Storm|LockOn", meta = (ClampMin = "0"))
 	float SearchRadius = 2500.f;
-	// 3500cm
 	UPROPERTY(EditAnywhere, Category = "Storm|LockOn", meta = (ClampMin = "0"))
 	float BreakDistance = 3500.f;
-	// 60도
 	UPROPERTY(EditAnywhere, Category = "Storm|LockOn", meta = (ClampMin = "0", ClampMax = "180"))
 	float MaxSearchAngle = 60.f;
-	// 1초
 	UPROPERTY(EditAnywhere, Category = "Storm|LockOn", meta = (ClampMin = "0"))
 	float LoseSightTime = 1.f;
 	UPROPERTY(EditAnywhere, Category = "Storm|LockOn", meta = (ClampMin = "0"))
 	float CameraInterpSpeed = 8.f;
-	// -10도 (대상을 바라 볼 때 더하는 Pitch)
 	UPROPERTY(EditAnywhere, Category = "Storm|LockOn")
 	float PitchOffset = -10.f;
 	UPROPERTY(EditAnywhere, Category = "Storm|LockOn")

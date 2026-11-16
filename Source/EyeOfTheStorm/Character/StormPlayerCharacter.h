@@ -133,42 +133,33 @@ protected:
 
 	// 회피
 
-	// 450cm
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0"))
 	float DodgeDistance = 450.f;
-	// 250cm (뒤로 구를 때 거리. 입력 없이 회피, 또는 락온 중 뒷방향 회피)
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0"))
 	float DodgeBackDistance = 250.f;
-	// 1.5배 (달리는 중 회피 거리. 앞·뒤 모두)
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "1"))
 	float RunDodgeDistanceScale = 1.5f;
-	// 1.2배. 달리는 중 회피의 몽타주 재생 속도 배율. 회피 시간은 이 배율로 나눠 짧아지고, 무적 길이(초)는 그대로다.
-	// 회피 시간이 DodgeInvincibleEnd보다 짧아지면 무적 끝이 잘린다.
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "1"))
 	float RunDodgePlayRateScale = 1.2f;
-	// RollEnd (회피 몽타주에서 이동이 끝나는 노티파이 이름. 이 시점에 몽타주를 블렌드 아웃한다)
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge")
 	FName DodgeEndNotifyName = TEXT("RollEnd");
-	// 0.05초
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0"))
 	float DodgeInvincibleStart = 0.05f;
-	// 0.35초
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0"))
 	float DodgeInvincibleEnd = 0.35f;
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge")
 	TObjectPtr<UCurveFloat> DodgeSpeedCurve;
-	// 150cm/s (입력 없이 구를 때 끝 속도. 입력을 누른 채 구르면 걷기/달리기 속도로 끝난다)
+	// 입력 없이 구를 때 끝 속도.
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0"))
 	float DodgeExitSpeed = 150.f;
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge")
 	TObjectPtr<UAnimMontage> DodgeMontage;
-	// 뒤로 구르기 몽타주 (입력 없이 회피, 또는 락온 중 뒷방향 입력). 비우면 DodgeMontage
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge")
 	TObjectPtr<UAnimMontage> DodgeBackMontage;
-	// 45도 (락온 중 입력이 캐릭터 뒤쪽에서 이 각도 안이면 뒤로 구른다)
+	// 락온 중 입력이 캐릭터 뒤쪽에서 이 각도 안이면 뒤로 구른다.
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0", ClampMax = "90"))
 	float DodgeBackAngle = 45.f;
-	// 0.3초 (RollEnd 이 시간 전부터 회복이 끝날 때까지 누른 회피 키를 기억했다가 회복이 끝나면 다시 구른다. 0이면 RollEnd 뒤 회복 중에만 받는다)
+	// RollEnd 이 시간 전부터 회복이 끝날 때까지 누른 회피 키를 기억했다가 회복이 끝나면 다시 구른다. 0이면 RollEnd 뒤 회복 중에만 받는다.
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0"))
 	float DodgeBufferTime = 0.3f;
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0.1"))
@@ -181,22 +172,17 @@ protected:
 	TArray<TObjectPtr<UAnimMontage>> ComboMontages;
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Attack", meta = (ClampMin = "0.1"))
 	float AttackMontagePlayRate = 1.f;
-	// 110cm (락온 중 전진할 때 대상 중심에서 이 거리 앞에서 멈춘다. 캡슐 반지름 둘 + 발 닿는 거리)
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Attack", meta = (ClampMin = "0"))
 	float AttackLungeStopDistance = 110.f;
 
 	// 카메라
 	
-	// 150cm
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Camera", meta = (ClampMin = "0"))
 	float MinZoomDistance = 150.f;
-	// 800cm
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Camera", meta = (ClampMin = "0"))
 	float MaxZoomDistance = 800.f;
-	// 50cm (휠 한 칸에 바뀌는 거리)
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Camera", meta = (ClampMin = "0"))
 	float ZoomStep = 50.f;
-	// 10 (클수록 목표 거리에 빨리 붙는다)
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Camera", meta = (ClampMin = "0"))
 	float ZoomInterpSpeed = 10.f;
 	
