@@ -10,6 +10,7 @@ class UInputAction;
 class UInputMappingContext;
 class USpringArmComponent;
 class UStormLockOnComponent;
+class UStormMeleeComponent;
 struct FInputActionValue;
 
 UCLASS()
@@ -23,10 +24,22 @@ public:
 	virtual void NotifyControllerChanged() override;
 	virtual void OnConstruction(const FTransform& Transform) override;
 
+	// 공격 몽타주의 Storm Combo Window 노티파이가 부른다. 열리는 순간 기억해 둔 회피·다음 타를 실행하고,
+	// 이때부터 공격이 끝날 때까지 회피로 끊을 수 있다.
+	void OpenComboWindow();
+	void CloseComboWindow();
+	// 공격 몽타주의 Storm Attack Lunge 노티파이가 부른다. Duration(초) 동안 바라보는 방향으로 Distance(cm)만큼 나간다.
+	// 다음 타, 회피, 공격 끝에서 지운다.
+	void BeginAttackLunge(float Distance, float Duration);
+
 	UFUNCTION(BlueprintPure, Category = "Storm|Player")
 	UStormLockOnComponent* GetLockOn() const { return LockOn; }
 	UFUNCTION(BlueprintPure, Category = "Storm|Player")
+	UStormMeleeComponent* GetMelee() const { return Melee; }
+	UFUNCTION(BlueprintPure, Category = "Storm|Player")
 	bool IsDodging() const { return bIsDodging; }
+	UFUNCTION(BlueprintPure, Category = "Storm|Player")
+	bool IsAttacking() const { return bIsAttacking; }
 	UFUNCTION(BlueprintPure, Category = "Storm|Player")
 	bool IsLockedOn() const;
 protected:
@@ -52,6 +65,14 @@ private:
 	void BeginDodgeInvincibility();
 	void EndDodgeInvincibility();
 
+	void Attack();
+	// ComboMontages[Index]를 재생한다. 락온 중이면 대상을, 아니면 입력 방향을 보고 찬다.
+	void StartAttack(int32 Index);
+	// 콤보를 처음으로 되돌린다. 몽타주 블렌드 아웃 시작, 회피, 사망에서 부른다.
+	void EndAttack();
+	void HandleAttackMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
+	void EndAttackLunge();
+
 	// 회피 중 / 락온 / 평상시에 맞게 회전 방식을 고른다.
 	void UpdateRotationMode();
 
@@ -65,6 +86,7 @@ private:
 	// 회피 이동 시간 (재생 속도 1 기준). 몽타주의 DodgeEndNotifyName 노티파이 시간 없으면 1.0f
 	float GetDodgeMoveTime(const UAnimMontage* Montage) const;
 	bool CanDodge() const;
+	bool CanAttack() const;
 protected:
 	// 컴포넌트
 
@@ -74,6 +96,8 @@ protected:
 	TObjectPtr<UCameraComponent> FollowCamera;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Storm|LockOn")
 	TObjectPtr<UStormLockOnComponent> LockOn;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Storm|Attack")
+	TObjectPtr<UStormMeleeComponent> Melee;
 
 	// 입력
 
@@ -89,6 +113,8 @@ protected:
 	TObjectPtr<UInputAction> LockOnAction;
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Input")
 	TObjectPtr<UInputAction> RunAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Input")
+	TObjectPtr<UInputAction> AttackAction;
 
 	// 이동
 
@@ -145,6 +171,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Dodge", meta = (ClampMin = "0.1"))
 	float DodgeMontagePlayRate = 1.f;
 
+	// 공격
+
+	// 1타, 2타, 3타 순서. 각 몽타주에 Storm Hit Window(판정)와 Storm Combo Window(다음 타 입력)를 둔다.
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Attack")
+	TArray<TObjectPtr<UAnimMontage>> ComboMontages;
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Attack", meta = (ClampMin = "0.1"))
+	float AttackMontagePlayRate = 1.f;
+	// 110cm (락온 중 전진할 때 대상 중심에서 이 거리 앞에서 멈춘다. 캡슐 반지름 둘 + 발 닿는 거리)
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Attack", meta = (ClampMin = "0"))
+	float AttackLungeStopDistance = 110.f;
+
 	// 외형
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storm|Appearance")
@@ -159,6 +196,18 @@ private:
 	uint16 DodgeRootMotionID = 0;
 	// 지금 재생 중인 회피 몽타주 (EndDodge에서 이것을 멈춘다). 에셋은 위 UPROPERTY가 잡고 있다.
 	TObjectPtr<UAnimMontage> ActiveDodgeMontage;
+
+	bool bIsAttacking = false;
+	bool bComboWindowOpen = false;
+	// 콤보 구간이 한 번 열린 뒤부터 공격이 끝날 때까지 true. 이 동안은 회피로 공격을 끊을 수 있다.
+	bool bAttackCancelable = false;
+	bool bAttackBuffered = false;
+	// 지금 재생 중인 타의 인덱스 (ComboMontages)
+	int32 ComboIndex = 0;
+	// 지금 재생 중인 공격 몽타주. 이전 타의 블렌드 아웃 알림과 구별한다.
+	TObjectPtr<UAnimMontage> ActiveAttackMontage;
+	// 공격 전진 힘(루트 모션 소스) ID. 0이면 없음
+	uint16 AttackLungeID = 0;
 
 	FTimerHandle DodgeEndTimer;
 	FTimerHandle DodgeForceEndTimer;

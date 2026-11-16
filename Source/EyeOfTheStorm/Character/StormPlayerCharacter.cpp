@@ -1,9 +1,12 @@
 #include "Character/StormPlayerCharacter.h"
 
+#include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Camera/CameraComponent.h"
 #include "Combat/StormLockOnComponent.h"
+#include "Combat/StormMeleeComponent.h"
+
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Curves/CurveFloat.h"
@@ -49,6 +52,7 @@ AStormPlayerCharacter::AStormPlayerCharacter()
 	FollowCamera->bUsePawnControlRotation = false;
 
 	LockOn = CreateDefaultSubobject<UStormLockOnComponent>(TEXT("LockOn"));
+	Melee = CreateDefaultSubobject<UStormMeleeComponent>(TEXT("Melee"));
 }
 
 void AStormPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -78,6 +82,10 @@ void AStormPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 		Input->BindAction(RunAction, ETriggerEvent::Started, this, &AStormPlayerCharacter::Run);
 		Input->BindAction(RunAction, ETriggerEvent::Completed, this, &AStormPlayerCharacter::RunCompleted);
 	}
+	if (AttackAction)
+	{
+		Input->BindAction(AttackAction, ETriggerEvent::Started, this, &AStormPlayerCharacter::Attack);
+	}
 }
 
 void AStormPlayerCharacter::NotifyControllerChanged()
@@ -101,6 +109,69 @@ void AStormPlayerCharacter::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 	// 레벨에 배치했을 때 에디터 뷰포트에서도 표정이 보이게.
 	ApplyDefaultMorphTargets();
+}
+
+void AStormPlayerCharacter::OpenComboWindow()
+{
+	if (!bIsAttacking)
+	{
+		return;
+	}
+	bComboWindowOpen = true;
+	bAttackCancelable = true;
+
+	// 공격 중에 누른 회피가 다음 타보다 먼저다.
+	if (bDodgeBuffered)
+	{
+		bAttackBuffered = false;
+		TryBufferedDodge();
+		return;
+	}
+	if (bAttackBuffered)
+	{
+		StartAttack(ComboIndex + 1);
+	}
+}
+
+void AStormPlayerCharacter::CloseComboWindow()
+{
+	bComboWindowOpen = false;
+}
+
+void AStormPlayerCharacter::BeginAttackLunge(float Distance, float Duration)
+{
+	EndAttackLunge();
+	if (!bIsAttacking || Distance <= 0.f || Duration <= 0.f)
+	{
+		return;
+	}
+
+	// 방향은 StartAttack에서 정한 몸 방향 그대로다.
+	const FVector Forward = GetActorForwardVector().GetSafeNormal2D();
+
+	// 락온 중이면 대상 앞에서 멈춘다 (붙어 있으면 제자리에서 찬다).
+	if (const AStormCharacterBase* Target = LockOn->GetTarget())
+	{
+		const float Ahead = FVector::DotProduct(Target->GetActorLocation() - GetActorLocation(), Forward);
+		Distance = FMath::Clamp(Ahead - AttackLungeStopDistance, 0.f, Distance);
+		if (Distance <= 0.f)
+		{
+			return;
+		}
+	}
+
+	// 회피와 같은 방식이다. 이동 컴포넌트 시간으로 돌아서 히트스톱(CustomTimeDilation) 동안 같이 멈춘다.
+	TSharedPtr<FRootMotionSource_ConstantForce> Force = MakeShared<FRootMotionSource_ConstantForce>();
+	Force->InstanceName = TEXT("StormAttackLunge");
+	Force->AccumulateMode = ERootMotionAccumulateMode::Override;
+	Force->Priority = 4;
+	Force->Force = Forward * (Distance / Duration);
+	Force->Duration = Duration;
+	Force->Settings.SetFlag(ERootMotionSourceSettingsFlags::IgnoreZAccumulate);
+	// 끝나면 바로 선다 (공격 중에는 이동 입력을 안 받으니 미끄러지지 않게).
+	Force->FinishVelocityParams.Mode = ERootMotionFinishVelocityMode::ClampVelocity;
+	Force->FinishVelocityParams.ClampVelocity = 0.f;
+	AttackLungeID = GetCharacterMovement()->ApplyRootMotionSource(Force);
 }
 
 bool AStormPlayerCharacter::IsLockedOn() const
@@ -127,6 +198,8 @@ void AStormPlayerCharacter::Tick(float DeltaSeconds)
 void AStormPlayerCharacter::HandleDeath(AActor* Killer)
 {
 	bDodgeBuffered = false;
+	bAttackBuffered = false;
+	EndAttack();
 	EndDodge();
 	EndDodgeForce();
 	LockOn->ClearLockOn();
@@ -140,7 +213,7 @@ void AStormPlayerCharacter::HandleDeath(AActor* Killer)
 void AStormPlayerCharacter::Move(const FInputActionValue& Value)
 {
 	MoveInput = Value.Get<FVector2D>();
-	if (bIsDodging || IsDead())
+	if (bIsDodging || bIsAttacking || IsDead())
 	{
 		return;
 	}
@@ -159,17 +232,25 @@ void AStormPlayerCharacter::MoveCompleted(const FInputActionValue& Value)
 
 void AStormPlayerCharacter::Look(const FInputActionValue& Value)
 {
-	// 락온 중에는 카메라를 락온 컴포넌트가 돌린다.
-	if (IsLockedOn())
-		return;
-
 	const FVector2D LookAxis = Value.Get<FVector2D>();
+	if (IsLockedOn())
+	{
+		AddControllerPitchInput(LookAxis.Y);
+		return;
+	}
 	AddControllerYawInput(LookAxis.X);
 	AddControllerPitchInput(LookAxis.Y);
 }
 
 void AStormPlayerCharacter::Dodge()
 {
+	// 콤보 구간이 열리기 전(차는 동작의 앞부분)에 누른 회피는 기억했다가 구간이 열리면 구른다.
+	if (bIsAttacking && !bAttackCancelable)
+	{
+		bDodgeBuffered = true;
+		return;
+	}
+
 	// 구르기 끝(RollEnd) 직전부터 회복(힘이 남은 꼬리 구간)이 끝날 때까지 누른 키는 기억했다가 회복이 끝나면 구른다.
 	// 구르기 초반에 누른 키는 버린다.
 	if (bIsDodging || DodgeRootMotionID != 0)
@@ -219,6 +300,9 @@ void AStormPlayerCharacter::RunCompleted()
 
 void AStormPlayerCharacter::StartDodge(const FVector& Direction, bool bBackward)
 {
+	// 공격 뒷부분을 회피로 끊는다. 공격 몽타주는 아래 회피 몽타주가 밀어낸다.
+	EndAttack();
+
 	bIsDodging = true;
 	UpdateRotationMode();
 	SetActorRotation(bBackward ? (-Direction).Rotation() : Direction.Rotation());
@@ -362,12 +446,127 @@ void AStormPlayerCharacter::EndDodgeInvincibility()
 	}
 }
 
+void AStormPlayerCharacter::Attack()
+{
+	if (bIsAttacking)
+	{
+		// 콤보 구간이 지나간 뒤(회복 동작)에 누른 키와 마지막 타 중에 누른 키는 버린다.
+		const bool bWindowPassed = bAttackCancelable && !bComboWindowOpen;
+		if (bWindowPassed || !ComboMontages.IsValidIndex(ComboIndex + 1))
+		{
+			return;
+		}
+		// 구간이 열리기 전에 누르면 기억했다가 열릴 때, 열려 있으면 바로 다음 타.
+		bAttackBuffered = true;
+		if (bComboWindowOpen)
+		{
+			StartAttack(ComboIndex + 1);
+		}
+		return;
+	}
+	if (CanAttack())
+	{
+		StartAttack(0);
+	}
+}
+
+void AStormPlayerCharacter::StartAttack(int32 Index)
+{
+	UAnimMontage* Montage = ComboMontages.IsValidIndex(Index) ? ComboMontages[Index].Get() : nullptr;
+	if (!Montage)
+	{
+		EndAttack();
+		return;
+	}
+
+	bIsAttacking = true;
+	bComboWindowOpen = false;
+	bAttackCancelable = false;
+	bAttackBuffered = false;
+	bDodgeBuffered = false;
+	ComboIndex = Index;
+	Melee->CancelHitWindow();
+	EndAttackLunge();
+
+	// 구르기 회복(힘이 남은 꼬리 구간) 중이면 끊고 찬다. 위에서 버퍼를 비웠으니 다시 구르지 않는다.
+	EndDodgeForce();
+	UpdateRotationMode();
+
+	// 락온 중이면 대상을, 아니면 입력 방향을 본다. 입력이 없으면 지금 방향 그대로.
+	FVector Facing = GetMoveInputWorldDirection();
+	if (const AStormCharacterBase* Target = LockOn->GetTarget())
+	{
+		Facing = (Target->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+	}
+	if (!Facing.IsNearlyZero())
+	{
+		SetActorRotation(Facing.Rotation());
+	}
+
+	// 다음 타를 먼저 기억해 둬야 이전 타의 블렌드 아웃 알림을 걸러낼 수 있다.
+	ActiveAttackMontage = Montage;
+	if (PlayAnimMontage(Montage, AttackMontagePlayRate) <= 0.f)
+	{
+		EndAttack();
+		return;
+	}
+
+	if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
+	{
+		FOnMontageBlendingOutStarted BlendingOut;
+		BlendingOut.BindUObject(this, &AStormPlayerCharacter::HandleAttackMontageBlendingOut);
+		AnimInstance->Montage_SetBlendingOutDelegate(BlendingOut, Montage);
+	}
+}
+
+void AStormPlayerCharacter::EndAttack()
+{
+	if (!bIsAttacking)
+	{
+		return;
+	}
+
+	bIsAttacking = false;
+	bComboWindowOpen = false;
+	bAttackCancelable = false;
+	bAttackBuffered = false;
+	ComboIndex = 0;
+	ActiveAttackMontage = nullptr;
+	Melee->CancelHitWindow();
+	EndAttackLunge();
+	UpdateRotationMode();
+
+	// 콤보 구간 노티파이가 없는 몽타주라면 회피 버퍼는 여기서 처리한다.
+	TryBufferedDodge();
+}
+
+void AStormPlayerCharacter::HandleAttackMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
+{
+	// 다음 타·회피로 넘어가며 밀려난 이전 몽타주는 무시한다.
+	if (Montage == ActiveAttackMontage)
+	{
+		EndAttack();
+	}
+}
+
+void AStormPlayerCharacter::EndAttackLunge()
+{
+	if (AttackLungeID == 0)
+	{
+		return;
+	}
+	// 시간이 다 돼 이미 사라진 소스면 아무 일도 없다.
+	GetCharacterMovement()->RemoveRootMotionSourceByID(AttackLungeID);
+	AttackLungeID = 0;
+}
+
 void AStormPlayerCharacter::UpdateRotationMode()
 {
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
-	if (bIsDodging || DodgeRootMotionID != 0)
+	if (bIsDodging || DodgeRootMotionID != 0 || bIsAttacking)
 	{
 		// 회피 중과 힘이 남은 동안에는 StartDodge에서 정한 방향을 유지한다 (백스텝이 이동 방향으로 돌아서지 않게).
+		// 공격 중에는 StartAttack에서 정한 방향을 유지한다.
 		Movement->bOrientRotationToMovement = false;
 		Movement->bUseControllerDesiredRotation = false;
 	}
@@ -434,5 +633,12 @@ float AStormPlayerCharacter::GetDodgeMoveTime(const UAnimMontage* Montage) const
 
 bool AStormPlayerCharacter::CanDodge() const
 {
-	return !bIsDodging && DodgeRootMotionID == 0 && !IsDead() && !GetCharacterMovement()->IsFalling();
+	return !bIsDodging && DodgeRootMotionID == 0 && !IsDead() && !GetCharacterMovement()->IsFalling()
+		&& (!bIsAttacking || bAttackCancelable);
+}
+
+bool AStormPlayerCharacter::CanAttack() const
+{
+	// 구르는 중(RollEnd 전)에는 못 차고, 회복 중에는 찰 수 있다 (StartAttack이 회복을 끊는다).
+	return !bIsDodging && !IsDead() && !GetCharacterMovement()->IsFalling() && ComboMontages.Num() > 0;
 }
