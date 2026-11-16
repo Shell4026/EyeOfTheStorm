@@ -54,6 +54,7 @@ private:
 	void ToggleLockOn();
 	void Run();
 	void RunCompleted();
+	void Zoom(const FInputActionValue& Value);
 
 	// bBackward: 몸은 Direction 반대를 보고 뒤로 구른다 (DodgeBackMontage). 아니면 Direction을 보고 앞으로 구른다.
 	void StartDodge(const FVector& Direction, bool bBackward);
@@ -115,6 +116,8 @@ protected:
 	TObjectPtr<UInputAction> RunAction;
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Input")
 	TObjectPtr<UInputAction> AttackAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Input")
+	TObjectPtr<UInputAction> ZoomAction;
 
 	// 이동
 
@@ -182,12 +185,29 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Attack", meta = (ClampMin = "0"))
 	float AttackLungeStopDistance = 110.f;
 
+	// 카메라
+	
+	// 150cm
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Camera", meta = (ClampMin = "0"))
+	float MinZoomDistance = 150.f;
+	// 800cm
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Camera", meta = (ClampMin = "0"))
+	float MaxZoomDistance = 800.f;
+	// 50cm (휠 한 칸에 바뀌는 거리)
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Camera", meta = (ClampMin = "0"))
+	float ZoomStep = 50.f;
+	// 10 (클수록 목표 거리에 빨리 붙는다)
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Camera", meta = (ClampMin = "0"))
+	float ZoomInterpSpeed = 10.f;
+	
 	// 외형
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storm|Appearance")
 	TMap<FName, float> DefaultMorphTargets;
 private:
 	FVector2D MoveInput = FVector2D::ZeroVector;
+
+	float TargetZoomDistance = 0.f;
 
 	bool bIsDodging = false;
 	bool bDodgeInvincible = false;

@@ -86,6 +86,10 @@ void AStormPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	{
 		Input->BindAction(AttackAction, ETriggerEvent::Started, this, &AStormPlayerCharacter::Attack);
 	}
+	if (ZoomAction)
+	{
+		Input->BindAction(ZoomAction, ETriggerEvent::Triggered, this, &AStormPlayerCharacter::Zoom);
+	}
 }
 
 void AStormPlayerCharacter::NotifyControllerChanged()
@@ -182,17 +186,24 @@ bool AStormPlayerCharacter::IsLockedOn() const
 void AStormPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
 	LockOn->OnTargetChanged.AddDynamic(this, &AStormPlayerCharacter::HandleLockOnTargetChanged);
 	ApplyDefaultMorphTargets();
+
+	TargetZoomDistance = CameraBoom->TargetArmLength;
+
 	UpdateRotationMode();
 }
 
 void AStormPlayerCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
 	const float Target = bIsRunning ? RunSpeed : WalkSpeed;
 	Movement->MaxWalkSpeed = FMath::FInterpConstantTo(Movement->MaxWalkSpeed, Target, DeltaSeconds, SpeedChangeRate);
+
+	CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetZoomDistance, DeltaSeconds, ZoomInterpSpeed);
 }
 
 void AStormPlayerCharacter::HandleDeath(AActor* Killer)
@@ -296,6 +307,11 @@ void AStormPlayerCharacter::Run()
 void AStormPlayerCharacter::RunCompleted()
 {
 	bIsRunning = false;
+}
+
+void AStormPlayerCharacter::Zoom(const FInputActionValue& Value)
+{
+	TargetZoomDistance = FMath::Clamp(TargetZoomDistance - Value.Get<float>() * ZoomStep, MinZoomDistance, MaxZoomDistance);
 }
 
 void AStormPlayerCharacter::StartDodge(const FVector& Direction, bool bBackward)

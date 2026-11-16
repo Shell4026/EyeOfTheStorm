@@ -41,14 +41,15 @@ void UStormLockOnComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		return;
 	}
 
+	const FRotator CurrentRotation = Controller->GetControlRotation();
 	// 카메라 위치가 아니라 캐릭터 위치에서 대상을 보는 방향을 쓴다.
 	// 카메라 위치 기준이면 카메라가 돌면서 기준점도 움직여서 흔들린다.
 	const FVector From = GetOwner()->GetActorLocation();
 	FRotator Desired = (Current->GetLockOnPoint() - From).Rotation();
-	Desired.Pitch = FMath::Clamp(Desired.Pitch + PitchOffset, MinPitch, MaxPitch);
+	Desired.Pitch = CurrentRotation.Pitch;//FMath::Clamp(Desired.Pitch + PitchOffset, MinPitch, MaxPitch);
 	Desired.Roll = 0.f;
 
-	const FRotator CurrentRotation = Controller->GetControlRotation();
+	
 	Controller->SetControlRotation(FMath::RInterpTo(CurrentRotation, Desired, DeltaTime, CameraInterpSpeed));
 }
 
