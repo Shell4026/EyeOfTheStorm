@@ -23,14 +23,14 @@ public:
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void NotifyControllerChanged() override;
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual AActor* GetAttackTarget() const override;
+	virtual bool IsAttacking() const override { return bIsAttacking; }
+	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
 	// 공격 몽타주의 Storm Combo Window 노티파이가 부른다. 열리는 순간 기억해 둔 회피·다음 타를 실행하고,
 	// 이때부터 공격이 끝날 때까지 회피로 끊을 수 있다.
 	void OpenComboWindow();
 	void CloseComboWindow();
-	// 공격 몽타주의 Storm Attack Lunge 노티파이가 부른다. Duration(초) 동안 바라보는 방향으로 Distance(cm)만큼 나간다.
-	// 다음 타, 회피, 공격 끝에서 지운다.
-	void BeginAttackLunge(float Distance, float Duration);
 
 	UFUNCTION(BlueprintPure, Category = "Storm|Player")
 	UStormLockOnComponent* GetLockOn() const { return LockOn; }
@@ -38,8 +38,6 @@ public:
 	UStormMeleeComponent* GetMelee() const { return Melee; }
 	UFUNCTION(BlueprintPure, Category = "Storm|Player")
 	bool IsDodging() const { return bIsDodging; }
-	UFUNCTION(BlueprintPure, Category = "Storm|Player")
-	bool IsAttacking() const { return bIsAttacking; }
 	UFUNCTION(BlueprintPure, Category = "Storm|Player")
 	bool IsLockedOn() const;
 protected:
@@ -72,7 +70,6 @@ private:
 	// 콤보를 처음으로 되돌린다. 몽타주 블렌드 아웃 시작, 회피, 사망에서 부른다.
 	void EndAttack();
 	void HandleAttackMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
-	void EndAttackLunge();
 
 	// 회피 중 / 락온 / 평상시에 맞게 회전 방식을 고른다.
 	void UpdateRotationMode();
@@ -172,8 +169,6 @@ protected:
 	TArray<TObjectPtr<UAnimMontage>> ComboMontages;
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Attack", meta = (ClampMin = "0.1"))
 	float AttackMontagePlayRate = 1.f;
-	UPROPERTY(EditDefaultsOnly, Category = "Storm|Attack", meta = (ClampMin = "0"))
-	float AttackLungeStopDistance = 110.f;
 
 	// 카메라
 	
@@ -212,8 +207,6 @@ private:
 	int32 ComboIndex = 0;
 	// 지금 재생 중인 공격 몽타주. 이전 타의 블렌드 아웃 알림과 구별한다.
 	TObjectPtr<UAnimMontage> ActiveAttackMontage;
-	// 공격 전진 힘(루트 모션 소스) ID. 0이면 없음
-	uint16 AttackLungeID = 0;
 
 	FTimerHandle DodgeEndTimer;
 	FTimerHandle DodgeForceEndTimer;

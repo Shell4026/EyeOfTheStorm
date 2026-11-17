@@ -5,6 +5,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/DamageEvents.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/DamageType.h"
@@ -71,6 +72,45 @@ void UStormMeleeComponent::CancelHitWindow()
 	SetComponentTickEnabled(false);
 }
 
+void UStormMeleeComponent::ApplyRadialHit(const FVector& Center, float Radius, float Damage, float HitStopDuration)
+{
+	UWorld* World = GetWorld();
+	AActor* Owner = GetOwner();
+	if (!World || !Owner || Radius <= 0.f)
+	{
+		return;
+	}
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(StormMeleeRadial), false, Owner);
+	TArray<FOverlapResult> Overlaps;
+	World->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(Radius), Params);
+
+	// 한 액터의 여러 컴포넌트가 겹쳐도 한 번만 맞는다.
+	TArray<AActor*, TInlineAllocator<4>> Targets;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Target = Overlap.GetActor();
+		if (Target && Target != Owner)
+		{
+			Targets.AddUnique(Target);
+		}
+	}
+
+	for (AActor* Target : Targets)
+	{
+		const FVector TargetLocation = Target->GetActorLocation();
+		FHitResult Hit(Target, Cast<UPrimitiveComponent>(Target->GetRootComponent()), TargetLocation, (TargetLocation - Center).GetSafeNormal());
+		Hit.TraceStart = Center;
+		Hit.TraceEnd = TargetLocation;
+		ApplyHit(Target, Hit, Damage, HitStopDuration);
+	}
+
+	if (CVarStormMeleeDebug.GetValueOnGameThread() != 0)
+	{
+		DrawDebugSphere(World, Center, Radius, 16, Targets.Num() > 0 ? FColor::Red : FColor::Orange, false, 1.f);
+	}
+}
+
 void UStormMeleeComponent::SweepHitWindow()
 {
 	UWorld* World = GetWorld();
@@ -108,7 +148,7 @@ void UStormMeleeComponent::SweepHitWindow()
 			}
 			HitActors.Add(Target);
 			bHitThisPoint = true;
-			ApplyHit(Target, Hit);
+			ApplyHit(Target, Hit, ActiveSettings.Damage, ActiveSettings.HitStopDuration);
 
 			if (!ActiveSource.IsValid())
 			{
@@ -125,12 +165,12 @@ void UStormMeleeComponent::SweepHitWindow()
 	PrevPoints = MoveTemp(Points);
 }
 
-void UStormMeleeComponent::ApplyHit(AActor* Target, const FHitResult& Hit)
+void UStormMeleeComponent::ApplyHit(AActor* Target, const FHitResult& Hit, float Damage, float HitStopDuration)
 {
 	AActor* Owner = GetOwner();
 	const FVector Direction = (Hit.TraceEnd - Hit.TraceStart).GetSafeNormal();
-	const FPointDamageEvent DamageEvent(ActiveSettings.Damage, Hit, Direction, UDamageType::StaticClass());
-	const float Applied = Target->TakeDamage(ActiveSettings.Damage, DamageEvent, Owner->GetInstigatorController(), Owner);
+	const FPointDamageEvent DamageEvent(Damage, Hit, Direction, UDamageType::StaticClass());
+	const float Applied = Target->TakeDamage(Damage, DamageEvent, Owner->GetInstigatorController(), Owner);
 
 	// 무적 or 죽은 상태
 	if (Applied <= 0.f)
@@ -143,7 +183,7 @@ void UStormMeleeComponent::ApplyHit(AActor* Target, const FHitResult& Hit)
 		*Owner->GetName(), *Target->GetName(), Applied,
 		StormTarget ? StormTarget->GetHealthComponent()->GetHealth() : -1.f);
 
-	StartHitStop(Target, ActiveSettings.HitStopDuration);
+	StartHitStop(Target, HitStopDuration);
 	OnHit.Broadcast(Target, Applied, Hit.ImpactPoint);
 }
 

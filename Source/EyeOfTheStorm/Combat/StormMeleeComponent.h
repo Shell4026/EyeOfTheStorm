@@ -44,12 +44,14 @@ public:
 	void EndHitWindow(const UObject* Source);
 	// 누가 열었든 지금 구간을 닫는다.
 	void CancelHitWindow();
+	// Center 주변 구 안의 Pawn에게 한 번에 피해를 준다 (내려찍기 같은 범위 공격). 열린 구간과는 상관없다.
+	void ApplyRadialHit(const FVector& Center, float Radius, float Damage, float HitStopDuration);
 
 	UFUNCTION(BlueprintPure, Category = "Storm|Melee")
 	bool IsHitWindowActive() const { return ActiveSource.IsValid(); }
 private:
 	void SweepHitWindow();
-	void ApplyHit(AActor* Target, const FHitResult& Hit);
+	void ApplyHit(AActor* Target, const FHitResult& Hit, float Damage, float HitStopDuration);
 	void StartHitStop(AActor* Target, float Duration);
 	void EndHitStop();
 

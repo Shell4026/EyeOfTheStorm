@@ -20,6 +20,8 @@
 #include "InputActionValue.h"
 #include "TimerManager.h"
 
+static TAutoConsoleVariable<int32> CVarStormInvincibleCheat(TEXT("Storm.Melee.Inv"), 0, TEXT("1: 무적"), EConsoleVariableFlags::ECVF_Cheat);
+
 AStormPlayerCharacter::AStormPlayerCharacter()
 {
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.f);
@@ -115,6 +117,18 @@ void AStormPlayerCharacter::OnConstruction(const FTransform& Transform)
 	ApplyDefaultMorphTargets();
 }
 
+AActor* AStormPlayerCharacter::GetAttackTarget() const
+{
+	return LockOn->GetTarget();
+}
+
+float AStormPlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+	if (CVarStormInvincibleCheat.GetValueOnGameThread() == 1)
+		return 0.f;
+	return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+}
+
 void AStormPlayerCharacter::OpenComboWindow()
 {
 	if (!bIsAttacking)
@@ -140,42 +154,6 @@ void AStormPlayerCharacter::OpenComboWindow()
 void AStormPlayerCharacter::CloseComboWindow()
 {
 	bComboWindowOpen = false;
-}
-
-void AStormPlayerCharacter::BeginAttackLunge(float Distance, float Duration)
-{
-	EndAttackLunge();
-	if (!bIsAttacking || Distance <= 0.f || Duration <= 0.f)
-	{
-		return;
-	}
-
-	// 방향은 StartAttack에서 정한 몸 방향 그대로다.
-	const FVector Forward = GetActorForwardVector().GetSafeNormal2D();
-
-	// 락온 중이면 대상 앞에서 멈춘다 (붙어 있으면 제자리에서 찬다).
-	if (const AStormCharacterBase* Target = LockOn->GetTarget())
-	{
-		const float Ahead = FVector::DotProduct(Target->GetActorLocation() - GetActorLocation(), Forward);
-		Distance = FMath::Clamp(Ahead - AttackLungeStopDistance, 0.f, Distance);
-		if (Distance <= 0.f)
-		{
-			return;
-		}
-	}
-
-	// 회피와 같은 방식이다. 이동 컴포넌트 시간으로 돌아서 히트스톱(CustomTimeDilation) 동안 같이 멈춘다.
-	TSharedPtr<FRootMotionSource_ConstantForce> Force = MakeShared<FRootMotionSource_ConstantForce>();
-	Force->InstanceName = TEXT("StormAttackLunge");
-	Force->AccumulateMode = ERootMotionAccumulateMode::Override;
-	Force->Priority = 4;
-	Force->Force = Forward * (Distance / Duration);
-	Force->Duration = Duration;
-	Force->Settings.SetFlag(ERootMotionSourceSettingsFlags::IgnoreZAccumulate);
-	// 끝나면 바로 선다 (공격 중에는 이동 입력을 안 받으니 미끄러지지 않게).
-	Force->FinishVelocityParams.Mode = ERootMotionFinishVelocityMode::ClampVelocity;
-	Force->FinishVelocityParams.ClampVelocity = 0.f;
-	AttackLungeID = GetCharacterMovement()->ApplyRootMotionSource(Force);
 }
 
 bool AStormPlayerCharacter::IsLockedOn() const
@@ -563,17 +541,6 @@ void AStormPlayerCharacter::HandleAttackMontageBlendingOut(UAnimMontage* Montage
 	{
 		EndAttack();
 	}
-}
-
-void AStormPlayerCharacter::EndAttackLunge()
-{
-	if (AttackLungeID == 0)
-	{
-		return;
-	}
-	// 시간이 다 돼 이미 사라진 소스면 아무 일도 없다.
-	GetCharacterMovement()->RemoveRootMotionSourceByID(AttackLungeID);
-	AttackLungeID = 0;
 }
 
 void AStormPlayerCharacter::UpdateRotationMode()

@@ -21,6 +21,8 @@ public:
 	// 최대 체력으로 되돌리고 경계 통과 기록도 지운다 (재시작용).
 	UFUNCTION(BlueprintCallable, Category = "Storm|Health")
 	void ResetHealth();
+	// 다음 ResetHealth(BeginPlay)부터 적용된다. 생성자에서 기본값을 정할 때 쓴다.
+	void SetThresholds(const TArray<float>& InThresholds) { Thresholds = InThresholds; }
 
 	UFUNCTION(BlueprintPure, Category = "Storm|Health")
 	float GetHealth() const { return Health; }
