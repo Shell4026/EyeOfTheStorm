@@ -72,3 +72,7 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+
+# Local AI tooling (UnrealMCP: chongdashu/unreal-mcp, patched for UE 5.7 locally)
+Plugins/UnrealMCP/
+.mcp.json
