@@ -43,6 +43,12 @@ void FVWRenderer::SetSettings_RenderThread(const FVWRenderSettings& InSettings, 
 	bStaticLUTDirty |= bInStaticLUTDirty;
 }
 
+void FVWRenderer::SetShadowCapture_RenderThread(const FVWShadowCaptureInfo& InInfo)
+{
+	Shadow = InInfo;
+	UE_LOG(LogTemp, Log, TEXT("[VW] 그림자 캡처 수신: %s"), Shadow.DepthTexture.IsValid() ? *Shadow.DepthTexture->GetSizeXYZ().ToString() : TEXT("없음"));
+}
+
 void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, const FViewInputs& Inputs)
 {
 	if (CVarVWEnable.GetValueOnRenderThread() == 0)

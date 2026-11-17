@@ -4,7 +4,9 @@
 #include "VWSubSystem.h"
 #include "VWViewExtension.h"
 
-#include <RenderingThread.h>
+#include "RenderingThread.h"
+#include "TextureResource.h"
+#include "Engine/TextureRenderTarget2D.h"
 
 void UVWSubSystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -74,6 +76,22 @@ void UVWSubSystem::PushSettings(const FVWRenderSettings& Settings, bool bStaticL
 				Extension->GetRenderer_RenderThread().SetSettings_RenderThread(Settings, bStaticLUTDirty);
 		}
 	);
+}
+
+void UVWSubSystem::PushShadowCapture(UTextureRenderTarget2D* DepthTarget, const FVWShadowCaptureInfo& Info)
+{
+	FTextureRenderTargetResource* Resource = DepthTarget ? DepthTarget->GameThread_GetRenderTargetResource() : nullptr;
+
+	ENQUEUE_RENDER_COMMAND(VWPushShadowCapture)(
+		[Extension = ViewExtension, Info, Resource](FRHICommandListImmediate&)
+		{
+			if (Extension)
+			{
+				FVWShadowCaptureInfo Copy = Info;
+				Copy.DepthTexture = Resource ? Resource->GetRenderTargetTexture() : nullptr;
+				Extension->GetRenderer_RenderThread().SetShadowCapture_RenderThread(Copy);
+			}
+		});
 }
 
 bool UVWSubSystem::DoesSupportWorldType(const EWorldType::Type WorldType) const

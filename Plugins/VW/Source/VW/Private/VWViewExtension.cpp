@@ -18,6 +18,8 @@ void FVWViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder
 {
 	if (!bActive)
 		return;
+	if (InView.bIsSceneCapture || InView.bIsReflectionCapture || InView.bIsPlanarReflection)
+		return;
 
 	Inputs.Validate();
 	const FSceneTextureUniformParameters* SceneTextures = Inputs.SceneTextures->GetContents();

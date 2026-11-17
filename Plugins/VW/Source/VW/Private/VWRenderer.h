@@ -11,6 +11,17 @@ class FRDGBuilder;
 class FGlobalShaderMap;
 class FVWCommonParams;
 
+struct FVWShadowCaptureInfo
+{
+	FTextureRHIRef DepthTexture;
+	FVector3f OriginUE = FVector3f::ZeroVector;
+	FVector3f Forward = FVector3f(1.f, 0.f, 0.f);
+	FVector3f Right = FVector3f(0.f, 1.f, 0.f);
+	FVector3f Up = FVector3f(0.f, 0.f, 1.f);
+	float OrthoWidth = 2'000'000.f; // 20km
+	float DepthBias = 200.f; // 200cm
+};
+
 class FVWRenderer
 {
 public:
@@ -26,6 +37,7 @@ public:
 
 	void SetHelloTint_RenderThread(const FLinearColor& InColor) { check(IsInRenderingThread()); HelloTint = InColor; }
 	void SetSettings_RenderThread(const FVWRenderSettings& InSettings, bool bInStaticLUTDirty);
+	void SetShadowCapture_RenderThread(const FVWShadowCaptureInfo& InInfo);
 
 	void Render(FRDGBuilder& GraphBuilder, const FSceneView& View, const FViewInputs& Inputs);
 private:
@@ -47,6 +59,8 @@ private:
 private:
 	FLinearColor HelloTint = FLinearColor{ 1.f, 0.3f, 0.3f };
 	FVWRenderSettings Settings;
+	FVWShadowCaptureInfo Shadow;
+
 	bool bStaticLUTDirty = false;
 
 	TRefCountPtr<IPooledRenderTarget> TransmittanceLUT;
