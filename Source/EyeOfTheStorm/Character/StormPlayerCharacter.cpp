@@ -536,7 +536,7 @@ void AStormPlayerCharacter::EndAttack()
 
 void AStormPlayerCharacter::HandleAttackMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
 {
-	// 다음 타·회피로 넘어가며 밀려난 이전 몽타주는 무시한다.
+	// 다음 타나 회피로 넘어가며 밀려난 이전 몽타주는 무시한다.
 	if (Montage == ActiveAttackMontage)
 	{
 		EndAttack();

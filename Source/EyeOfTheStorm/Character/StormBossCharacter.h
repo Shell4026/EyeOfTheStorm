@@ -59,7 +59,7 @@ public:
 	bool StartPattern(int32 Index);
 	void StopPattern();
 	void SetCombatTarget(AActor* NewTarget);
-	// 공격 간격이 지났고, 거리·쿨다운이 맞는 패턴이 하나라도 있으면 true.
+	// 공격 간격이 지났고, 거리와 쿨다운이 맞는 패턴이 하나라도 있으면 true.
 	bool HasAvailablePattern() const;
 
 	UBehaviorTree* GetBehaviorTree() const { return BehaviorTree; }

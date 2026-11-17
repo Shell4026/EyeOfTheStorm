@@ -27,7 +27,7 @@ public:
 	virtual bool IsAttacking() const override { return bIsAttacking; }
 	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
 
-	// 공격 몽타주의 Storm Combo Window 노티파이가 부른다. 열리는 순간 기억해 둔 회피·다음 타를 실행하고,
+	// 공격 몽타주의 Storm Combo Window 노티파이가 부른다. 열리는 순간 기억해 둔 회피나 다음 타를 실행하고,
 	// 이때부터 공격이 끝날 때까지 회피로 끊을 수 있다.
 	void OpenComboWindow();
 	void CloseComboWindow();
