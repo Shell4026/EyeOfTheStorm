@@ -1,0 +1,124 @@
+#include "VWAtmosphere.ush"
+
+uint Steps;
+Texture3D<float4> AerialPerspectiveLUT;
+Texture2D<float> ShadowDepthTexture;
+Texture2D<float> SceneDepthTexture;
+Texture2D<float4> BlueNoiseTexture;
+SamplerState LinearClampSampler;
+
+float3 ShadowOriginUE;
+float ShadowOrthoWidth;
+float3 ShadowForward;
+float ShadowDepthBias;
+float3 ShadowRight;
+uint bShadowValid;
+float3 ShadowUp;
+
+RWTexture2D<float4> OutLUT;
+
+float Visible(float3 PosW)
+{
+	if (bShadowValid == 0)
+		return 1.0;
+
+	// 직교 카메라라서 투영 행렬 없이 축 벡터와의 내적만으로 UV 와 깊이를 구할 수 있다.
+	const float3 Rel = WToUEPos(PosW) - ShadowOriginUE;
+	const float Depth = dot(Rel, ShadowForward);
+	const float2 UV = float2(dot(Rel, ShadowRight), -dot(Rel, ShadowUp)) / ShadowOrthoWidth + 0.5;
+	if (any(UV < 0.0) || any(UV > 1.0) || Depth < 0.0)
+		return 1.0;
+
+	uint W, H;
+	ShadowDepthTexture.GetDimensions(W, H);
+	const int2 Texel = min(int2(UV * float2(W, H)), int2(W, H) - 1);
+	const float StoredDepth = ShadowDepthTexture.Load(int3(Texel, 0));
+	return (Depth - ShadowDepthBias <= StoredDepth) ? 1.0 : 0.0;
+}
+
+float3 SampleAP(float2 UV, float Distance)
+{
+	return AerialPerspectiveLUT.SampleLevel(LinearClampSampler, float3(UV, GetAerialPerspectiveZ(Distance)), 0).rgb;
+}
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint Width, Height;
+	OutLUT.GetDimensions(Width, Height);
+	if (DispatchThreadId.x >= Width || DispatchThreadId.y >= Height)
+		return;
+
+	const float2 UV = (float2(DispatchThreadId.xy) + 0.5) / float2(Width, Height);
+	const float3 RayDir = GetRayDirW(UV);
+	const float3 CamPos = VWView.CamPosWorld;
+	const float3 Center = PlanetCenterW();
+
+	float RayStart, RayEnd;
+	if (!RaySphereIntersect(CamPos, RayDir, Center, VWAtmosphere.AtmosphereRadius, RayStart, RayEnd))
+	{
+		OutLUT[DispatchThreadId.xy] = float4(0.0, 0.0, 0.0, 1.0);
+		return;
+	}
+	RayStart = max(RayStart, 0.0);
+	RayEnd = 32000.0; // AP LUT 가 덮는 거리 (32km)
+
+	float NearGround, FarGround;
+	if (RaySphereIntersect(CamPos, RayDir, Center, VWAtmosphere.GroundRadius, NearGround, FarGround))
+		RayEnd = min(RayEnd, NearGround);
+	
+	const float DeviceZ = SceneDepthTexture[ViewUVToScenePixel(UV)];
+	if (!IsSky(DeviceZ))
+		RayEnd = min(RayEnd, GetSurfaceDistanceW(UV, DeviceZ));
+
+	if (RayEnd <= RayStart)
+	{
+		OutLUT[DispatchThreadId.xy] = float4(0.0, 0.0, 0.0, 1.0);
+		return;
+	}
+
+	// 블루 노이즈 지터링: 규칙적인 밴딩을 불규칙한 노이즈로 바꾼다
+	uint NoiseW, NoiseH;
+	BlueNoiseTexture.GetDimensions(NoiseW, NoiseH);
+	const float Noise = BlueNoiseTexture.Load(int3(DispatchThreadId.xy % uint2(max(NoiseW, 1u), max(NoiseH, 1u)), 0)).r;
+
+	const float StepSize = (RayEnd - RayStart) / Steps;
+	float3 InScattering = 0.0;
+	float T0 = RayStart;
+    float3 Scattering0 = SampleAP(UV, T0);  // 그림자 시작 지점의 누적 산란
+	bool bWasShadowed = Visible(CamPos) < 0.5;
+
+	for (uint i = 0; i < Steps; ++i)
+	{
+		const float SegmentT0 = RayStart + float(i) * StepSize;
+		const float SegmentT1 = min(RayStart + float(i + 1) * StepSize, RayEnd);
+		const float SampleT = lerp(SegmentT0, SegmentT1, Noise);
+
+		const float3 SamplePos = CamPos + RayDir * SampleT;
+		if (length(SamplePos - Center) - VWAtmosphere.GroundRadius < 0.0)
+		{
+			T0 = SegmentT0;
+			break;
+		}
+
+		const bool bShadowed = Visible(SamplePos) < 0.5;
+		if (bShadowed && !bWasShadowed) // 밝음 -> 그림자
+		{
+			Scattering0 = SampleAP(UV, SegmentT0);
+		}
+		else if (!bShadowed && bWasShadowed) // 그림자 -> 밝음
+		{
+			InScattering += SampleAP(UV, SegmentT0) - Scattering0;
+		}
+		bWasShadowed = bShadowed;
+		T0 = SegmentT1;
+	}
+
+	// 광선 끝까지 그림자인 경우
+	if (bWasShadowed)
+	{
+		InScattering += SampleAP(UV, T0) - Scattering0;
+	}
+
+	OutLUT[DispatchThreadId.xy] = float4(InScattering, 1.0);
+}

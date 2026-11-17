@@ -1,0 +1,16 @@
+#include "VWCommon.ush"
+
+Texture2D<float> SceneDepthTexture;
+int2 OutSize;
+RWTexture2D<float> OutDepth;
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	if (any(DispatchThreadId.xy >= uint2(OutSize)))
+	{
+		return;
+	}
+	const float2 UV = (float2(DispatchThreadId.xy) + 0.5) / float2(OutSize);
+	OutDepth[DispatchThreadId.xy] = SceneDepthTexture[ViewUVToScenePixel(UV)];
+}

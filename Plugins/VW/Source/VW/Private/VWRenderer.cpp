@@ -46,7 +46,6 @@ void FVWRenderer::SetSettings_RenderThread(const FVWRenderSettings& InSettings, 
 void FVWRenderer::SetShadowCapture_RenderThread(const FVWShadowCaptureInfo& InInfo)
 {
 	Shadow = InInfo;
-	UE_LOG(LogTemp, Log, TEXT("[VW] 그림자 캡처 수신: %s"), Shadow.DepthTexture.IsValid() ? *Shadow.DepthTexture->GetSizeXYZ().ToString() : TEXT("없음"));
 }
 
 void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, const FViewInputs& Inputs)
@@ -75,6 +74,7 @@ void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, cons
 	else
 	{
 		const uint32 ModeFlags = GetModeFlags();
+		FRDGTextureRef BlueNoiseTex = GSystemTextures.GetBlackDummy(GraphBuilder);
 
 		StaticLUT StaticLUTs{};
 		RenderStaticLUTs(GraphBuilder, ShaderMap, CommonParams, StaticLUTs);
@@ -82,7 +82,12 @@ void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, cons
 		FRDGTextureRef AerialPerspectiveTex = (ModeFlags & 1)
 			? RenderAerialPerspective(GraphBuilder, ShaderMap, CommonParams, Inputs, StaticLUTs.Transmittance, StaticLUTs.MultiScattering)
 			: GSystemTextures.GetVolumetricBlackDummy(GraphBuilder);
-		RenderComposite(GraphBuilder, ShaderMap, CommonParams, Inputs, SkyViewTex, AerialPerspectiveTex);
+		FRDGTextureRef QuarterDepth = RenderLowResDepth(GraphBuilder, ShaderMap, CommonParams, Inputs, 4);
+		FRDGTextureRef AerialShadowTex = (ModeFlags & 2)
+			? RenderAerialShadow(GraphBuilder, ShaderMap, CommonParams, Inputs, AerialPerspectiveTex, BlueNoiseTex)
+			: GSystemTextures.GetBlackDummy(GraphBuilder);
+		
+		RenderComposite(GraphBuilder, ShaderMap, CommonParams, Inputs, SkyViewTex, AerialPerspectiveTex, AerialShadowTex, QuarterDepth);
 	}
 }
 
@@ -199,7 +204,7 @@ void FVWRenderer::RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* 
 	bStaticLUTDirty = false;
 
 	Output.Transmittance = Transmittance;
-	Output.MultiScattering = Transmittance;
+	Output.MultiScattering = MultiScattering;
 }
 
 FRDGTextureRef FVWRenderer::RenderSkyViewLUT(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, FRDGTextureRef Transmittance, FRDGTextureRef MultiScattering)
@@ -220,7 +225,8 @@ FRDGTextureRef FVWRenderer::RenderSkyViewLUT(FRDGBuilder& GraphBuilder, FGlobalS
 	return SkyView;
 }
 
-void FVWRenderer::RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef SkyView, FRDGTextureRef AerialPerspective)
+void FVWRenderer::RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, 
+	FRDGTextureRef SkyView, FRDGTextureRef AerialPerspective, FRDGTextureRef AerialShadow, FRDGTextureRef QuarterDepth)
 {
 	const FIntPoint ViewSize = Inputs.ViewRect.Size();
 	FRDGTextureRef Output = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
@@ -232,6 +238,8 @@ void FVWRenderer::RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* S
 	Param->SceneDepthTexture = Inputs.SceneDepth;
 	Param->SkyViewLUT = SkyView;
 	Param->AerialPerspectiveLUT = AerialPerspective;
+	Param->AerialShadowLUT = AerialShadow;
+	Param->QuarterDepth = QuarterDepth;
 	Param->SkyViewSampler = GetSkyViewSampler();
 	Param->LinearClampSampler = GetLinearClampSampler();
 	Param->Output = GraphBuilder.CreateUAV(Output);
@@ -261,13 +269,57 @@ FRDGTextureRef FVWRenderer::RenderAerialPerspective(FRDGBuilder& GraphBuilder, F
 	return Output;
 }
 
+FRDGTextureRef FVWRenderer::RenderLowResDepth(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, int32 Divider)
+{
+	const FIntPoint OutSize = FIntPoint::DivideAndRoundUp(Inputs.ViewRect.Size(), Divider);
+	FRDGTextureRef LowDepth = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(OutSize, EPixelFormat::PF_R32_FLOAT, FClearValueBinding::None, UAVTextureFlags),
+		Divider == 2 ? TEXT("VW.HalfDepth") : TEXT("VW.QuarterDepth"));
+
+	FVWDepthDownsampleCS::FParameters* Param = GraphBuilder.AllocParameters<FVWDepthDownsampleCS::FParameters>();
+	Param->Common = Common;
+	Param->SceneDepthTexture = Inputs.SceneDepth;
+	Param->OutSize = OutSize;
+	Param->OutDepth = GraphBuilder.CreateUAV(LowDepth);
+
+	TShaderMapRef<FVWDepthDownsampleCS> CS{ ShaderMap };
+	FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.DepthDownsample 1/%d", Divider), CS, Param, FComputeShaderUtils::GetGroupCount(OutSize, 16));
+	return LowDepth;
+}
+
+FRDGTextureRef FVWRenderer::RenderAerialShadow(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef AerialPerspective, FRDGTextureRef BlueNoiseTexture)
+{
+	const FIntPoint OutSize = FIntPoint::DivideAndRoundUp(Inputs.ViewRect.Size(), 4); // 1/4로 렌더링
+	FRDGTextureRef AerialShadow = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(OutSize, EPixelFormat::PF_FloatRGBA, FClearValueBinding::None, UAVTextureFlags), TEXT("VW.AerialShadow"));
+
+	FVWAerialShadowCS::FParameters* Param = GraphBuilder.AllocParameters<FVWAerialShadowCS::FParameters>();
+	Param->Common = Common;
+	Param->Steps = Settings.Quality.AerialShadowSteps;
+	Param->AerialPerspectiveLUT = AerialPerspective;
+	Param->ShadowDepthTexture = RegisterExternalTexture(GraphBuilder, Shadow.DepthTexture, TEXT("VW.ShadowDepth"));
+	Param->SceneDepthTexture = Inputs.SceneDepth;
+	Param->BlueNoiseTexture = BlueNoiseTexture;
+	Param->LinearClampSampler = GetLinearClampSampler();
+	Param->ShadowOriginUE = Shadow.OriginUE;
+	Param->ShadowOrthoWidth = Shadow.OrthoWidth;
+	Param->ShadowForward = Shadow.Forward;
+	Param->ShadowDepthBias = Shadow.DepthBias;
+	Param->ShadowRight = Shadow.Right;
+	Param->bShadowValid = 1;
+	Param->ShadowUp = Shadow.Up;
+	Param->OutLUT = GraphBuilder.CreateUAV(AerialShadow);
+
+	TShaderMapRef<FVWAerialShadowCS> CS{ ShaderMap };
+	FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.AerialShadow"), CS, Param, FComputeShaderUtils::GetGroupCount(OutSize, 16));
+	return AerialShadow;
+}
+
 uint32 FVWRenderer::GetModeFlags() const
 {
 	const FVWQualitySettings& Quality = Settings.Quality;
 	uint32 Flags = 0;
 	if (Quality.bAerialPerspective)
-	{
 		Flags |= 1;
-	}
+	if (Quality.bVolumetricShadow && Shadow.DepthTexture.IsValid())
+		Flags |= 2;
 	return Flags;
 }

@@ -10,3 +10,5 @@ IMPLEMENT_GLOBAL_SHADER(FVWMultiScatteringLUTCS, "/Plugin/VW/Private/MultiScatte
 IMPLEMENT_GLOBAL_SHADER(FVWSkyViewLUTCS, "/Plugin/VW/Private/SkyViewLUT.usf", "MainCS", SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FVWCompositeCS, "/Plugin/VW/Private/Composite.usf", "MainCS", SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FVWAerialPerspectiveLUTCS, "/Plugin/VW/Private/AerialPerspectiveLUT.usf", "MainCS", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FVWDepthDownsampleCS, "/Plugin/VW/Private/DepthDownsample.usf", "MainCS", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FVWAerialShadowCS, "/Plugin/VW/Private/AerialShadow.usf", "MainCS", SF_Compute);

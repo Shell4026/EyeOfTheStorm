@@ -146,7 +146,12 @@ void AVWActor::UpdateShadowCapture(const FVector& SunDirUE)
 	EnsureShadowTarget();
 
 	constexpr double CaptureDistanceCm = 1'000'000.0; // 10km
+	const float HalfWidth = ShadowAreaKm * 100'000.f * 0.5f;
+	const float FarPlane = CaptureDistanceCm * 2.0;
 	const FVector Center = GetActorLocation();
+	
+	ShadowCapture->bUseCustomProjectionMatrix = true;
+	ShadowCapture->CustomProjectionMatrix = FReversedZOrthoMatrix(HalfWidth, HalfWidth, 1.f / FarPlane, 0.f);
 	ShadowCapture->SetWorldLocationAndRotation(Center - SunDirUE * CaptureDistanceCm, SunDirUE.Rotation());
 	ShadowCapture->OrthoWidth = ShadowAreaKm * 100'000.f;
 

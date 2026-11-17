@@ -131,6 +131,8 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SceneDepthTexture)
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SkyViewLUT)
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, AerialPerspectiveLUT)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, AerialShadowLUT)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, QuarterDepth)
 		SHADER_PARAMETER_SAMPLER(SamplerState, LinearClampSampler)
 		SHADER_PARAMETER_SAMPLER(SamplerState, SkyViewSampler)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, Output)
@@ -150,5 +152,43 @@ public:
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, MultiScatteringLUT)
 		SHADER_PARAMETER_SAMPLER(SamplerState, LinearClampSampler)
 		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture3D<float4>, OutLUT)
+	END_SHADER_PARAMETER_STRUCT()
+};
+class FVWDepthDownsampleCS : public FVWShaderBase
+{
+public:
+	DECLARE_GLOBAL_SHADER(FVWDepthDownsampleCS);
+	SHADER_USE_PARAMETER_STRUCT(FVWDepthDownsampleCS, FVWShaderBase);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_INCLUDE(FVWCommonParams, Common)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SceneDepthTexture)
+		SHADER_PARAMETER(FIntPoint, OutSize)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, OutDepth)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
+class FVWAerialShadowCS : public FVWShaderBase
+{
+public:
+	DECLARE_GLOBAL_SHADER(FVWAerialShadowCS);
+	SHADER_USE_PARAMETER_STRUCT(FVWAerialShadowCS, FVWShaderBase);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_INCLUDE(FVWCommonParams, Common)
+		SHADER_PARAMETER(uint32, Steps)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture3D, AerialPerspectiveLUT)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, ShadowDepthTexture)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SceneDepthTexture)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, BlueNoiseTexture)
+		SHADER_PARAMETER_SAMPLER(SamplerState, LinearClampSampler)
+		SHADER_PARAMETER(FVector3f, ShadowOriginUE)
+		SHADER_PARAMETER(float, ShadowOrthoWidth)
+		SHADER_PARAMETER(FVector3f, ShadowForward)
+		SHADER_PARAMETER(float, ShadowDepthBias)
+		SHADER_PARAMETER(FVector3f, ShadowRight)
+		SHADER_PARAMETER(uint32, bShadowValid)
+		SHADER_PARAMETER(FVector3f, ShadowUp)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, OutLUT)
 	END_SHADER_PARAMETER_STRUCT()
 };

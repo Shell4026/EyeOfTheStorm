@@ -4,6 +4,8 @@ Texture2D<float4> SceneColorTexture;
 Texture2D<float> SceneDepthTexture;
 Texture2D<float4> SkyViewLUT;
 Texture3D<float4> AerialPerspectiveLUT;
+Texture2D<float4> AerialShadowLUT;
+Texture2D<float> QuarterDepth;
 
 SamplerState LinearClampSampler;
 SamplerState SkyViewSampler;
@@ -39,6 +41,44 @@ float3 RenderSun(float3 RayDir)
 	return VWAtmosphere.SunIlluminance * step(cos(radians(0.52)), CosAngle);
 }
 
+float4 DepthAwareUpsample(Texture2D<float4> LowTex, Texture2D<float> LowDepth, float2 UV, float DeviceZ)
+{
+    uint W, H;
+    LowTex.GetDimensions(W, H);
+    const int2 Size = int2(W, H);
+    const float2 TexelPos = float2(Size) * UV - 0.5;
+    const int2 Base = int2(floor(TexelPos));
+    const float2 Fraction = frac(TexelPos);
+
+    float WeightSum = 0.0;
+    float4 Sum = 0.0;
+    float BestDiff = 1e30;
+    float4 Best = 0.0;
+    for (int Y = 0; Y <= 1; ++Y)
+    {
+        for (int X = 0; X <= 1; ++X)
+        {
+            const int2 Coord = clamp(Base + int2(X, Y), int2(0, 0), Size - 1);
+            const float4 Value = LowTex.Load(int3(Coord, 0));
+            const float LowZ = LowDepth.Load(int3(Coord, 0));
+
+            const float WeightX = (X == 0) ? 1.0 - Fraction.x : Fraction.x;
+            const float WeightY = (Y == 0) ? 1.0 - Fraction.y : Fraction.y;
+
+            const float DepthDiff = abs(DeviceZ - LowZ);
+            if (DepthDiff < BestDiff)
+            {
+                BestDiff = DepthDiff;
+                Best = Value;
+            }
+            const float Weight = exp(-DepthDiff * 1e6) * WeightX * WeightY;
+            WeightSum += Weight;
+            Sum += Value * Weight;
+        }
+    }
+    return WeightSum < 1e-6 ? Best : Sum / WeightSum;
+}
+
 [numthreads(8, 8, 1)]
 void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
 {
@@ -62,6 +102,10 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
         Output[Pixel] = SceneColor; // 대기 밖 (우주)
         return;
     }
+    
+    float3 AerialShadow = 0.0;
+    if (Mode & 2)
+        AerialShadow = DepthAwareUpsample(AerialShadowLUT, QuarterDepth, UV, DeviceZ).rgb;
 
     float3 Background;
     if (!IsSky(DeviceZ))
@@ -72,11 +116,11 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
             const float LutZ = GetAerialPerspectiveZ(GetSurfaceDistanceW(UV, DeviceZ));
             AerialPerspective = AerialPerspectiveLUT.SampleLevel(LinearClampSampler, float3(UV, LutZ), 0);
         }
-        Background = SceneColor.rgb * AerialPerspective.a + AerialPerspective.rgb;
+        Background = SceneColor.rgb * AerialPerspective.a + (AerialPerspective.rgb - AerialShadow);
     }
     else
     {
-        Background = SampleSkyView(RayDir).rgb + RenderSun(RayDir);
+        Background = SampleSkyView(RayDir).rgb - AerialShadow + RenderSun(RayDir);
     }
 
     float3 Result = Background;

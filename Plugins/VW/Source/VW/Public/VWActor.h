@@ -54,7 +54,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Weather|Shadow", meta = (ClampMin = "256", ClampMax = "4096"))
 	int32 ShadowMapResolution = 2048;
 	UPROPERTY(EditAnywhere, Category = "Weather|Shadow", meta = (ClampMin = "0.1"))
-	float ShadowAreaKm = 20.f;
+	float ShadowAreaKm = 1.f;
 	UPROPERTY(EditAnywhere, Category = "Weather|Shadow", meta = (ClampMin = "0"))
 	float ShadowDepthBiasCm = 200.f;
 private:
