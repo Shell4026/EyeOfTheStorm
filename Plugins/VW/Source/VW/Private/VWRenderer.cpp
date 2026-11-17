@@ -1,11 +1,12 @@
 #include "VWRenderer.h"
 #include "VWShaders.h"
 
-#include <GlobalShader.h>
-#include <HAL/IConsoleManager.h>
-#include <RenderGraphBuilder.h>
-#include <RenderGraphUtils.h>
-#include <SceneView.h>
+#include "HAL/IConsoleManager.h"
+#include "GlobalShader.h"
+#include "RenderGraphBuilder.h"
+#include "RenderGraphUtils.h"
+#include "SceneView.h"
+#include "SystemTextures.h"
 
 static TAutoConsoleVariable<int32> CVarVWHello(
 	TEXT("r.VW.Hello"), 0, TEXT("1 = 화면을 붉게함"), EConsoleVariableFlags::ECVF_RenderThreadSafe);
@@ -19,6 +20,7 @@ namespace
 	constexpr int32 TransmittanceLUTSize = 256;
 	constexpr int32 MultiScatteringLUTSize = 128;
 	const FIntPoint SkyViewLUTSize(200, 400);
+	const int32 AerialPerspectiveLUTSize = 32;
 	const ETextureCreateFlags UAVTextureFlags = TexCreate_ShaderResource | TexCreate_UAV;
 
 	FRHISamplerState* GetLinearClampSampler()
@@ -66,10 +68,15 @@ void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, cons
 	}
 	else
 	{
-		OutputLUT Outputs{};
-		RenderStaticLUTs(GraphBuilder, ShaderMap, CommonParams, Outputs);
-		FRDGTextureRef SkyViewTex = RenderSkyViewLUT(GraphBuilder, ShaderMap, CommonParams, Outputs.Transmittance, Outputs.MultiScattering);
-		RenderComposite(GraphBuilder, ShaderMap, CommonParams, Inputs, SkyViewTex);
+		const uint32 ModeFlags = GetModeFlags();
+
+		StaticLUT StaticLUTs{};
+		RenderStaticLUTs(GraphBuilder, ShaderMap, CommonParams, StaticLUTs);
+		FRDGTextureRef SkyViewTex = RenderSkyViewLUT(GraphBuilder, ShaderMap, CommonParams, StaticLUTs.Transmittance, StaticLUTs.MultiScattering);
+		FRDGTextureRef AerialPerspectiveTex = (ModeFlags & 1)
+			? RenderAerialPerspective(GraphBuilder, ShaderMap, CommonParams, Inputs, StaticLUTs.Transmittance, StaticLUTs.MultiScattering)
+			: GSystemTextures.GetVolumetricBlackDummy(GraphBuilder);
+		RenderComposite(GraphBuilder, ShaderMap, CommonParams, Inputs, SkyViewTex, AerialPerspectiveTex);
 	}
 }
 
@@ -94,7 +101,7 @@ FVWCommonParams FVWRenderer::CreateCommonParams(const FSceneView& View, const FI
 	AtmoUB.RayleighColor = A.RayleighColor;
 	AtmoUB.APDistanceFactor = Settings.Quality.APDistanceFactor;
 	AtmoUB.SunDir = Settings.Lighting.SunDirW;
-	AtmoUB.ModeFlags = 0;
+	AtmoUB.ModeFlags = GetModeFlags();
 
 	FVWCommonParams CommonParams;
 	CommonParams.VWView = TUniformBufferRef<FVWViewUniformParams>::CreateUniformBufferImmediate(ViewUB, EUniformBufferUsage::UniformBuffer_SingleFrame);
@@ -142,7 +149,7 @@ void FVWRenderer::RenderDebugView(FRDGBuilder& GraphBuilder, FGlobalShaderMap* S
 	AddCopyTexturePass(GraphBuilder, Output, Inputs.SceneColor, Inputs.ViewRect.Min, Inputs.ViewRect.Min, ViewSize);
 }
 
-void FVWRenderer::RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, OutputLUT& Output)
+void FVWRenderer::RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, StaticLUT& Output)
 {
 	if (!bStaticLUTDirty && TransmittanceLUT.IsValid() && MultiScatteringLUT.IsValid())
 	{
@@ -207,7 +214,7 @@ FRDGTextureRef FVWRenderer::RenderSkyViewLUT(FRDGBuilder& GraphBuilder, FGlobalS
 	return SkyView;
 }
 
-void FVWRenderer::RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef SkyView)
+void FVWRenderer::RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef SkyView, FRDGTextureRef AerialPerspective)
 {
 	const FIntPoint ViewSize = Inputs.ViewRect.Size();
 	FRDGTextureRef Output = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
@@ -218,12 +225,43 @@ void FVWRenderer::RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* S
 	Param->SceneColorTexture = Inputs.SceneColor;
 	Param->SceneDepthTexture = Inputs.SceneDepth;
 	Param->SkyViewLUT = SkyView;
+	Param->AerialPerspectiveLUT = AerialPerspective;
 	Param->SkyViewSampler = GetSkyViewSampler();
+	Param->LinearClampSampler = GetLinearClampSampler();
 	Param->Output = GraphBuilder.CreateUAV(Output);
 
-	TShaderMapRef<FVWCompositeCS> CS(ShaderMap);
+	TShaderMapRef<FVWCompositeCS> CS{ ShaderMap };
 	FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.Composite"), CS, Param, FComputeShaderUtils::GetGroupCount(ViewSize, 8));
 
 	// SceneColor 로 복사
 	AddCopyTexturePass(GraphBuilder, Output, Inputs.SceneColor, Inputs.ViewRect.Min, Inputs.ViewRect.Min, ViewSize);
+}
+
+FRDGTextureRef FVWRenderer::RenderAerialPerspective(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef Transmittance, FRDGTextureRef MultiScattering)
+{
+	FRDGTextureRef Output = GraphBuilder.CreateTexture(
+		FRDGTextureDesc::Create3D(FIntVector(AerialPerspectiveLUTSize), EPixelFormat::PF_FloatRGBA, FClearValueBinding::Black, UAVTextureFlags), TEXT("VW.AerialPerspective"));
+
+	FVWAerialPerspectiveLUTCS::FParameters* Param = GraphBuilder.AllocParameters<FVWAerialPerspectiveLUTCS::FParameters>();
+	Param->Common = Common;
+	Param->Steps = Settings.Quality.AerialPerspectiveSteps;
+	Param->TransmittanceLUT = Transmittance;
+	Param->MultiScatteringLUT = MultiScattering;
+	Param->LinearClampSampler = GetLinearClampSampler();
+	Param->OutLUT = GraphBuilder.CreateUAV(Output);
+
+	TShaderMapRef<FVWAerialPerspectiveLUTCS> CS{ ShaderMap };
+	FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.AerialPerspective"), CS, Param, FComputeShaderUtils::GetGroupCount(FIntPoint(AerialPerspectiveLUTSize), 8));
+	return Output;
+}
+
+uint32 FVWRenderer::GetModeFlags() const
+{
+	const FVWQualitySettings& Quality = Settings.Quality;
+	uint32 Flags = 0;
+	if (Quality.bAerialPerspective)
+	{
+		Flags |= 1;
+	}
+	return Flags;
 }

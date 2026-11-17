@@ -3,7 +3,11 @@
 Texture2D<float4> SceneColorTexture;
 Texture2D<float> SceneDepthTexture;
 Texture2D<float4> SkyViewLUT;
+Texture3D<float4> AerialPerspectiveLUT;
+
+SamplerState LinearClampSampler;
 SamplerState SkyViewSampler;
+
 RWTexture2D<float4> Output;
 
 float4 SampleSkyView(float3 RayDir)
@@ -49,6 +53,8 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
     const float3 CamPos = VWView.CamPosWorld;
     const float3 Center = PlanetCenterW();
     const float4 SceneColor = SceneColorTexture[Pixel];
+    const float DeviceZ = SceneDepthTexture[Pixel];
+    const uint Mode = VWAtmosphere.ModeFlags;
 
     float NearAtmo, FarAtmo;
     if (!RaySphereIntersect(CamPos, RayDir, Center, VWAtmosphere.AtmosphereRadius, NearAtmo, FarAtmo))
@@ -57,12 +63,16 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
         return;
     }
 
-    const float DeviceZ = SceneDepthTexture[Pixel];
-
     float3 Background;
     if (!IsSky(DeviceZ))
     {
-        Background = SceneColor.rgb;
+        float4 AerialPerspective = float4(0.0, 0.0, 0.0, 1.0);
+        if (Mode & 1)
+        {
+            const float LutZ = GetAerialPerspectiveZ(GetSurfaceDistanceW(UV, DeviceZ));
+            AerialPerspective = AerialPerspectiveLUT.SampleLevel(LinearClampSampler, float3(UV, LutZ), 0);
+        }
+        Background = SceneColor.rgb * AerialPerspective.a + AerialPerspective.rgb;
     }
     else
     {

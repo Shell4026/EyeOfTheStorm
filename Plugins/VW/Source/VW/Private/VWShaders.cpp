@@ -9,3 +9,4 @@ IMPLEMENT_GLOBAL_SHADER(FVWTransmittanceLUTCS, "/Plugin/VW/Private/Transmittance
 IMPLEMENT_GLOBAL_SHADER(FVWMultiScatteringLUTCS, "/Plugin/VW/Private/MultiScatteringLUT.usf", "MainCS", SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FVWSkyViewLUTCS, "/Plugin/VW/Private/SkyViewLUT.usf", "MainCS", SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FVWCompositeCS, "/Plugin/VW/Private/Composite.usf", "MainCS", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FVWAerialPerspectiveLUTCS, "/Plugin/VW/Private/AerialPerspectiveLUT.usf", "MainCS", SF_Compute);

@@ -1,0 +1,61 @@
+#include "VWAtmosphere.ush"
+
+uint Steps;
+Texture2D<float4> TransmittanceLUT;
+Texture2D<float4> MultiScatteringLUT;
+SamplerState LinearClampSampler;
+RWTexture3D<float4> OutLUT;
+
+[numthreads(8, 8, 1)]
+void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint Width, Height, Depth;
+	OutLUT.GetDimensions(Width, Height, Depth);
+	if (DispatchThreadId.x >= Width || DispatchThreadId.y >= Height)
+	{
+		return;
+	}
+
+	const float2 UV = (float2(DispatchThreadId.xy) + 0.5) / float2(Width, Height);
+	const float3 RayDir = GetRayDirW(UV);
+    const float3 CamPos = VWView.CamPosWorld;
+	const float3 Center = PlanetCenterW();
+
+	const float Mu = dot(RayDir, -VWAtmosphere.SunDir);
+	const float RayleighPh = RayleighPhase(Mu);
+	const float MiePh = MiePhase(Mu, VWAtmosphere.MieG);
+
+	float3 SigmaSum = 0.0;
+	float3 InScattering = 0.0;
+	float3 Transmittance = 1.0;
+	OutLUT[uint3(DispatchThreadId.xy, 0)] = float4(0.0, 0.0, 0.0, 1.0);
+
+	const float Factor = VWAtmosphere.APDistanceFactor;
+	const float LastSlice = float(Depth - 1);
+	for (uint Z = 1; Z < Depth; ++Z)
+	{
+		// 슬라이스 경계를 지수 분포로 (가까운 곳에 촘촘하게)
+		const float SliceBegin = 32000.0 * (exp(Factor * float(Z - 1) / LastSlice) - 1.0) / (exp(Factor) - 1.0);
+		const float SliceEnd = 32000.0 * (exp(Factor * float(Z) / LastSlice) - 1.0) / (exp(Factor) - 1.0);
+		const float StepSize = (SliceEnd - SliceBegin) / Steps;
+
+		for (uint i = 0; i < Steps; ++i)
+		{
+			const float Distance = SliceBegin + (i + 0.5) * StepSize;
+			const float3 SamplePos = CamPos + RayDir * Distance;
+			const float SampleHeight = length(SamplePos - Center) - VWAtmosphere.GroundRadius;
+			if (SampleHeight < 0.0)
+			{
+				break;
+			}
+
+			Transmittance = exp(-SigmaSum);
+			SigmaSum += (ScatteringCoefficient(SampleHeight) + AbsorptionCoefficient(SampleHeight)) * StepSize;
+
+			InScattering += Transmittance * GetScatteredLight(SamplePos, SampleHeight, RayleighPh, MiePh,
+				TransmittanceLUT, MultiScatteringLUT, LinearClampSampler) * StepSize;
+		}
+
+		OutLUT[uint3(DispatchThreadId.xy, Z)] = float4(InScattering, dot(Transmittance, 1.0 / 3.0));
+	}
+}

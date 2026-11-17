@@ -29,17 +29,21 @@ public:
 
 	void Render(FRDGBuilder& GraphBuilder, const FSceneView& View, const FViewInputs& Inputs);
 private:
-	struct OutputLUT
+	struct StaticLUT
 	{
 		FRDGTextureRef Transmittance = nullptr;
 		FRDGTextureRef MultiScattering = nullptr;
 	};
 	FVWCommonParams CreateCommonParams(const FSceneView& View, const FIntRect& ViewRect) const;
+
 	void RenderHello(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FViewInputs& Inputs);
 	void RenderDebugView(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FViewInputs& Inputs, const FVWCommonParams& CommonParams, uint32 DebugMode);
-	void RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, OutputLUT& Output);
+	void RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, StaticLUT& Output);
 	FRDGTextureRef RenderSkyViewLUT(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, FRDGTextureRef Transmittance, FRDGTextureRef MultiScattering);
-	void RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef SkyView);
+	void RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef SkyView, FRDGTextureRef AerialPerspective);
+	FRDGTextureRef RenderAerialPerspective(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef Transmittance, FRDGTextureRef MultiScattering);
+
+	uint32 GetModeFlags() const;
 private:
 	FLinearColor HelloTint = FLinearColor{ 1.f, 0.3f, 0.3f };
 	FVWRenderSettings Settings;
