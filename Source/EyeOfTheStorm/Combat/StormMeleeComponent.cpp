@@ -2,6 +2,7 @@
 
 #include "Character/StormCharacterBase.h"
 #include "Combat/StormHealthComponent.h"
+#include "Components/DecalComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/DamageEvents.h"
@@ -108,6 +109,55 @@ void UStormMeleeComponent::ApplyRadialHit(const FVector& Center, float Radius, f
 	if (CVarStormMeleeDebug.GetValueOnGameThread() != 0)
 	{
 		DrawDebugSphere(World, Center, Radius, 16, Targets.Num() > 0 ? FColor::Red : FColor::Orange, false, 1.f);
+	}
+}
+
+void UStormMeleeComponent::ShowTelegraph(const UObject* Source, const FVector& LocalCenter, float Radius)
+{
+	AActor* Owner = GetOwner();
+	USceneComponent* Root = Owner ? Owner->GetRootComponent() : nullptr;
+	if (!Root)
+	{
+		return;
+	}
+	if (!TelegraphMaterial)
+	{
+		UE_LOG(LogStormMelee, Warning, TEXT("%s: TelegraphMaterial이 비어 있어 예고 장판을 그리지 않는다."), *GetNameSafe(Owner));
+		return;
+	}
+
+	if (!TelegraphDecal)
+	{
+		TelegraphDecal = NewObject<UDecalComponent>(Owner, TEXT("TelegraphDecal"));
+		TelegraphDecal->SetupAttachment(Root);
+		// 데칼은 X축 방향으로 투사하므로 아래를 보게 세운다.
+		TelegraphDecal->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f));
+		TelegraphDecal->RegisterComponent();
+	}
+
+	TelegraphSource = Source;
+	TelegraphDecal->SetDecalMaterial(TelegraphMaterial);
+	// DecalSize는 반 크기다. X가 투사 깊이, Y와 Z가 바닥의 원
+	TelegraphDecal->DecalSize = FVector(TelegraphDepth, Radius, Radius);
+	TelegraphDecal->SetRelativeLocation(LocalCenter);
+	TelegraphDecal->SetVisibility(true);
+	TelegraphDecal->MarkRenderStateDirty();
+}
+
+void UStormMeleeComponent::HideTelegraph(const UObject* Source)
+{
+	if (TelegraphSource.Get() == Source)
+	{
+		CancelTelegraph();
+	}
+}
+
+void UStormMeleeComponent::CancelTelegraph()
+{
+	TelegraphSource.Reset();
+	if (TelegraphDecal)
+	{
+		TelegraphDecal->SetVisibility(false);
 	}
 }
 

@@ -116,6 +116,7 @@ bool AStormBossCharacter::StartPattern(int32 Index)
 	ActivePatternIndex = Index;
 	ActivePatternMontage = Montage;
 	Melee->CancelHitWindow();
+	Melee->CancelTelegraph();
 	EndAttackLunge();
 	GetCharacterMovement()->StopMovementImmediately();
 	UpdateRotationMode();
@@ -223,6 +224,7 @@ void AStormBossCharacter::EndPattern(bool bInterrupted)
 	ActivePatternIndex = INDEX_NONE;
 	ActivePatternMontage = nullptr;
 	Melee->CancelHitWindow();
+	Melee->CancelTelegraph();
 	EndAttackLunge();
 	NextAttackTime = GetWorld()->GetTimeSeconds() + AttackInterval * GetPhaseSettings().CooldownScale;
 	UpdateRotationMode();

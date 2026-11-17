@@ -113,6 +113,8 @@ void AStormCharacterBase::BeginPlay()
 	// 생성자에서 바꾸면 BP에 저장된 충돌 프리셋(Pawn, CharacterMesh)을 로드할 때 덮어써져서 여기서 한다.
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 	GetMesh()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	// 예고 장판 같은 바닥 데칼이 캐릭터 몸에 그려지지 않게 한다.
+	GetMesh()->SetReceivesDecals(false);
 }
 
 void AStormCharacterBase::HandleDeath(AActor* Killer)

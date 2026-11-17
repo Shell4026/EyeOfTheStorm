@@ -4,6 +4,8 @@
 #include "Components/ActorComponent.h"
 #include "StormMeleeComponent.generated.h"
 
+class UDecalComponent;
+class UMaterialInterface;
 class USkeletalMeshComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FStormMeleeHitSignature, AActor*, Target, float, Damage, FVector, ImpactPoint);
@@ -46,6 +48,12 @@ public:
 	void CancelHitWindow();
 	// Center 주변 구 안의 Pawn에게 한 번에 피해를 준다 (내려찍기 같은 범위 공격). 열린 구간과는 상관없다.
 	void ApplyRadialHit(const FVector& Center, float Radius, float Damage, float HitStopDuration);
+	// 범위 공격 예고 장판을 바닥에 그린다. LocalCenter는 액터 기준 (X가 앞)이고 장판은 액터를 따라 움직인다.
+	// Source는 장판을 연 노티파이. 같은 Source의 HideTelegraph만 장판을 끈다.
+	void ShowTelegraph(const UObject* Source, const FVector& LocalCenter, float Radius);
+	void HideTelegraph(const UObject* Source);
+	// 누가 열었든 장판을 끈다 (패턴 중단, 사망).
+	void CancelTelegraph();
 
 	UFUNCTION(BlueprintPure, Category = "Storm|Melee")
 	bool IsHitWindowActive() const { return ActiveSource.IsValid(); }
@@ -66,6 +74,15 @@ protected:
 	float HitStopTimeDilation = 0.05f;
 	UPROPERTY(EditAnywhere, Category = "Storm|Melee", meta = (ClampMin = "2", ClampMax = "16"))
 	int32 MaxSamplePoints = 8;
+
+	// 예고 장판
+
+	// 머티리얼 도메인이 Deferred Decal인 머티리얼. 비어 있으면 장판을 그리지 않는다
+	UPROPERTY(EditAnywhere, Category = "Storm|Telegraph")
+	TObjectPtr<UMaterialInterface> TelegraphMaterial;
+	// 장판 중심에서 위아래로 이 거리 안의 바닥에 그린다. 경사나 단차가 크면 늘린다
+	UPROPERTY(EditAnywhere, Category = "Storm|Telegraph", meta = (ClampMin = "1"))
+	float TelegraphDepth = 300.f;
 private:
 	TWeakObjectPtr<const UObject> ActiveSource;
 	TWeakObjectPtr<USkeletalMeshComponent> ActiveMesh;
@@ -78,4 +95,9 @@ private:
 	TArray<TWeakObjectPtr<AActor>> HitStopActors;
 
 	FTimerHandle HitStopTimer;
+
+	// 처음 ShowTelegraph 때 만들어 루트에 붙인다
+	UPROPERTY(Transient)
+	TObjectPtr<UDecalComponent> TelegraphDecal;
+	TWeakObjectPtr<const UObject> TelegraphSource;
 };
