@@ -11,7 +11,7 @@
  * Builder for UVWInteractiveTool
  */
 UCLASS()
-class VW_API UVWInteractiveToolBuilder : public UInteractiveToolBuilder
+class VWEDITOR_API UVWInteractiveToolBuilder : public UInteractiveToolBuilder
 {
 	GENERATED_BODY()
 
@@ -25,7 +25,7 @@ public:
  * Property set for the UVWInteractiveTool
  */
 UCLASS(Transient)
-class VW_API UVWInteractiveToolProperties : public UInteractiveToolPropertySet
+class VWEDITOR_API UVWInteractiveToolProperties : public UInteractiveToolPropertySet
 {
 	GENERATED_BODY()
 
@@ -53,7 +53,7 @@ public:
  * the second point is set by shift-click-dragging the mouse.
  */
 UCLASS()
-class VW_API UVWInteractiveTool : public UInteractiveTool, public IClickDragBehaviorTarget
+class VWEDITOR_API UVWInteractiveTool : public UInteractiveTool, public IClickDragBehaviorTarget
 {
 	GENERATED_BODY()
 

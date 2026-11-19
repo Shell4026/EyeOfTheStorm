@@ -19,6 +19,11 @@
 			"Name": "VW",
 			"Type": "Runtime",
 			"LoadingPhase": "PostConfigInit"
+		},
+		{
+			"Name": "VWEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	]
 }

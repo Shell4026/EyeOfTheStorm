@@ -11,7 +11,7 @@
  * Builder for UVWSimpleTool
  */
 UCLASS()
-class VW_API UVWSimpleToolBuilder : public UInteractiveToolBuilder
+class VWEDITOR_API UVWSimpleToolBuilder : public UInteractiveToolBuilder
 {
 	GENERATED_BODY()
 
@@ -27,7 +27,7 @@ public:
  * which provides an OnModified delegate that the Tool will listen to for changes in property values.
  */
 UCLASS(Transient)
-class VW_API UVWSimpleToolProperties : public UInteractiveToolPropertySet
+class VWEDITOR_API UVWSimpleToolProperties : public UInteractiveToolPropertySet
 {
 	GENERATED_BODY()
 public:
@@ -46,7 +46,7 @@ public:
  * clicks left mouse button. All the action is in the ::OnClicked handler.
  */
 UCLASS()
-class VW_API UVWSimpleTool : public USingleClickTool
+class VWEDITOR_API UVWSimpleTool : public USingleClickTool
 {
 	GENERATED_BODY()
 
