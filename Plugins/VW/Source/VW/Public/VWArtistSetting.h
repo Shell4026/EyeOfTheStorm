@@ -46,13 +46,13 @@ struct FVWArtistSetting
 	float TimeSpeed = 0.f;
 
 	// 대기
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere", meta = (DisplayName = "대기 두께", ClampMin = "0.1", ClampMax = "4"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere", meta = (DisplayName = "대기 두께", ClampMin = "0.1"))
 	float AtmosphereThickness = 1.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere", meta = (DisplayName = "레일리 산란 강도", ClampMin = "0", ClampMax = "4"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere", meta = (DisplayName = "레일리 산란 강도", ClampMin = "0"))
 	float RayleighScatteringStrength = 1.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere", meta = (DisplayName = "에어로졸 강도", ClampMin = "0", ClampMax = "100"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere", meta = (DisplayName = "에어로졸 강도", ClampMin = "0"))
 	float MieScatteringStrength = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Atmosphere", meta = (DisplayName = "에어로졸 방향성", ClampMin = "0", ClampMax = "0.99"))
