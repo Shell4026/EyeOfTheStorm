@@ -267,15 +267,15 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
 	}
 
 	const float DeviceZ = SceneDepthTexture[ViewUVToScenePixel(UV)];
-	if (!IsSky(DeviceZ))
-	{
-		SegmentCount = ClipCloudSegments(GetSurfaceDistanceW(UV, DeviceZ), Segment0, Segment1, SegmentCount);
-	}
+    if (!IsSky(DeviceZ))
+    {
+        SegmentCount = ClipCloudSegments(GetSurfaceDistanceW(UV, DeviceZ), Segment0, Segment1, SegmentCount);
+    }
     SegmentCount = LimitMarchLength(VWCloud.MaxMarchDistance, Segment0, Segment1, SegmentCount);
 	if (SegmentCount == 0)
 	{
 		OutCloud[Pixel] = float4(0.0, 0.0, 0.0, 1.0);
-		OutCloudDepth[Pixel] = -1.0;
+        OutCloudDepth[Pixel] = CLOUD_DEPTH_OCCLUDED;
 		return;
 	}
 

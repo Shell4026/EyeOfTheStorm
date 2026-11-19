@@ -81,6 +81,33 @@ float4 DepthAwareUpsample(Texture2D<float4> LowTex, Texture2D<float> LowDepth, f
     }
     return WeightSum < 1e-6 ? Best : Sum / WeightSum;
 }
+float SampleCloudDepth(float2 UV, float Fallback)
+{
+    uint W, H;
+    CloudDepthTexture.GetDimensions(W, H);
+    const int2 Size = int2(W, H);
+    const float2 TexelPos = float2(Size) * UV - 0.5;
+    const int2 Base = int2(floor(TexelPos));
+    const float2 Fraction = frac(TexelPos);
+
+    float Sum = 0.0;
+    float WeightSum = 0.0;
+    for (int Y = 0; Y <= 1; ++Y)
+    {
+        for (int X = 0; X <= 1; ++X)
+        {
+            const int2 Coord = clamp(Base + int2(X, Y), int2(0, 0), Size - 1);
+            const float Depth = CloudDepthTexture.Load(int3(Coord, 0));
+            if (Depth < 0.0)
+                continue;
+            const float WeightX = (X == 0) ? 1.0 - Fraction.x : Fraction.x;
+            const float WeightY = (Y == 0) ? 1.0 - Fraction.y : Fraction.y;
+            Sum += Depth * WeightX * WeightY;
+            WeightSum += WeightX * WeightY;
+        }
+    }
+    return WeightSum > 1e-5 ? Sum / WeightSum : Fallback;
+}
 
 [numthreads(8, 8, 1)]
 void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
@@ -132,10 +159,11 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
         const float InnerRadius = VWAtmosphere.GroundRadius + CLOUD_HEIGHT;
         const float OuterRadius = InnerRadius + CLOUD_THICKNESS;
         float2 Segment0, Segment1;
-        if (RayCloudShellIntersect(CamPos, RayDir, Center, InnerRadius, OuterRadius, Segment0, Segment1) >= 1)
+        const int SegmentCount = RayCloudShellIntersect(CamPos, RayDir, Center, InnerRadius, OuterRadius, Segment0, Segment1);
+        if (SegmentCount >= 1 && GetSurfaceDistanceW(UV, DeviceZ) > Segment0.x)
         {
             const float4 Cloud = DepthAwareUpsample(CloudTexture, HalfDepth, UV, DeviceZ);
-            const float CloudDepth = max(CloudDepthTexture.SampleLevel(LinearClampSampler, UV, 0), 0.0);
+            const float CloudDepth = SampleCloudDepth(UV, lerp(Segment0.x, Segment0.y, 0.3));
 
             float4 AtmosphereToCloud = float4(0.0, 0.0, 0.0, 1.0);
             if (Mode & 1)

@@ -16,6 +16,11 @@ bool IsCurrentFramePixel(int2 Pixel)
 	return all((Pixel & 1) == BAYER_22[VWView.FrameIndex % 4]);
 }
 
+bool IsCloudOccluded(float CloudDepth)
+{
+    return CloudDepth < -1.5;
+}
+
 float2 PreviousUV(float3 RayDirUE)
 {
 	const float3 PrevCamRel = RayDirUE * 1e7 + VWView.CamDeltaUE; // 100km = 1e7cm
@@ -27,30 +32,56 @@ float2 PreviousUV(float3 RayDirUE)
 	return float2(PrevNDC.x * 0.5 + 0.5, 0.5 - PrevNDC.y * 0.5);
 }
 
-void CurrentNeighborhood(int2 Pixel, int2 Size, out float4 Mean, out float4 StdDev)
+bool CurrentNeighborhood(int2 Pixel, int2 Size, out float4 Mean, out float4 StdDev)
 {
 	float4 M1 = 0.0;
 	float4 M2 = 0.0;
+    float Count = 0.0;
 	for (int Y = -1; Y <= 1; ++Y)
 	{
 		for (int X = -1; X <= 1; ++X)
 		{
 			const int2 Coord = clamp(Pixel + int2(X, Y), int2(0, 0), Size - 1);
+            if (IsCloudOccluded(CurCloudDepthTexture.Load(int3(Coord, 0))))
+                continue;
 			const float4 C = CurCloudTexture.Load(int3(Coord, 0));
 			M1 += C;
 			M2 += C * C;
-		}
+            Count += 1.0;
+        }
 	}
-	Mean = M1 / 9.0;
-	StdDev = sqrt(max(M2 / 9.0 - Mean * Mean, 0.0));
+    Mean = 0.0;
+    StdDev = 0.0;
+    if (Count == 0.0)
+        return false;
+    Mean = M1 / Count;
+    StdDev = sqrt(max(M2 / Count - Mean * Mean, 0.0));
+    return true;
 }
 
-// 같은 2x2 블록에서 이번 프레임에 새로 계산한 픽셀의 값
-float4 FreshBlockCloud(int2 Pixel, int2 Size)
+float4 ClampToNeighborhood(float4 History, int2 Pixel, int2 Size)
+{
+    float4 Mean, StdDev;
+    if (!CurrentNeighborhood(Pixel, Size, Mean, StdDev))
+        return History;
+    const float4 Gamma = NeighborhoodGamma * StdDev;
+    const float4 BoxMin = max(Mean - Gamma, 0.0);
+    float4 BoxMax = Mean + Gamma;
+    BoxMax.a = min(BoxMax.a, 1.0);
+    return clamp(History, BoxMin, BoxMax);
+}
+
+// 히스토리를 쓸 수 없을 때의 값. 같은 22 블록의 새 값, 그게 가려졌으면 가려지지 않은 이웃의 평균
+float4 FallbackCloud(int2 Pixel, int2 Size)
 {
 	// Pixel & ~1 : 현재 2x2블록의 원점
     const int2 Fresh = min((Pixel & ~1) + BAYER_22[VWView.FrameIndex % 4], Size - 1);
-    return CurCloudTexture.Load(int3(Fresh, 0));
+    if (!IsCloudOccluded(CurCloudDepthTexture.Load(int3(Fresh, 0))))
+        return CurCloudTexture.Load(int3(Fresh, 0));
+    float4 Mean, StdDev;
+    if (CurrentNeighborhood(Pixel, Size, Mean, StdDev))
+        return Mean;
+    return float4(0.0, 0.0, 0.0, 1.0);
 }
 
 [numthreads(16, 16, 1)]
@@ -72,7 +103,9 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
 
 	const float4 CurCloud = CurCloudTexture.Load(int3(Pixel, 0));
 	const float CurDepth = CurCloudDepthTexture.Load(int3(Pixel, 0));
-	if (bCurrentFramePixel && CurDepth < 0.0) // 구름층을 지나지 않는 픽셀
+    const bool bOccluded = bCurrentFramePixel && IsCloudOccluded(CurDepth);
+	
+    if (bCurrentFramePixel && !bOccluded && CurDepth < 0.0) // 구름층을 지나지 않는 픽셀
 	{
 		AccumTexture[Pixel] = 0;
 		OutCloud[Pixel] = CurCloud;
@@ -81,7 +114,7 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
 	if (VWView.HistoryValid == 0)
 	{
 		AccumTexture[Pixel] = 0;
-        OutCloud[Pixel] = bCurrentFramePixel ? CurCloud : FreshBlockCloud(Pixel, Size);
+        OutCloud[Pixel] = FallbackCloud(Pixel, Size);
 		return;
 	}
 
@@ -95,15 +128,21 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
 	if (any(HistoryUV < 0.0) || any(HistoryUV >= 1.0))
 	{
 		AccumTexture[Pixel] = 0;
-        OutCloud[Pixel] = bCurrentFramePixel ? CurCloud : FreshBlockCloud(Pixel, Size);
+        OutCloud[Pixel] = FallbackCloud(Pixel, Size);
 		return;
 	}
 
 	float4 PrevCloud = PrevCloudTexture.SampleLevel(LinearClampSampler, HistoryUV, 0);
+    if (bOccluded) // 가려져서 계산을 건너뛴 픽셀은 물체 뒤 구름을 히스토리로 유지
+    {
+        AccumTexture[Pixel] = 0;
+        OutCloud[Pixel] = ClampToNeighborhood(PrevCloud, Pixel, Size);
+        return;
+    }
 	if (!bCurrentFramePixel) // 이번 프레임에 계산하지 않은 픽셀은 재투영 결과를 그대로
 	{
         if (Accum == 0)
-            PrevCloud = FreshBlockCloud(Pixel, Size);
+            PrevCloud = FallbackCloud(Pixel, Size);
 		OutCloud[Pixel] = PrevCloud;
 		return;
 	}
@@ -111,13 +150,7 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
 	const float Weight = min(Accum / float(Accum + 1), MaxHistoryWeight);
     Accum = min(Accum + 1, 16u);
 
-	float4 Mean, StdDev;
-	CurrentNeighborhood(Pixel, Size, Mean, StdDev);
-	const float4 Gamma = NeighborhoodGamma * StdDev;
-	const float4 BoxMin = max(Mean - Gamma, 0.0);
-	float4 BoxMax = Mean + Gamma;
-	BoxMax.a = min(BoxMax.a, 1.0);
-	PrevCloud = clamp(PrevCloud, BoxMin, BoxMax);
+    PrevCloud = ClampToNeighborhood(PrevCloud, Pixel, Size);
 
 	AccumTexture[Pixel] = Accum;
 	OutCloud[Pixel] = float4(lerp(CurCloud.rgb, PrevCloud.rgb, Weight), lerp(CurCloud.a, PrevCloud.a, Weight));
