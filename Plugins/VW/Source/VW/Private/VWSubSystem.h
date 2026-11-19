@@ -9,6 +9,7 @@
 
 class FVWViewExtension;
 class UTextureRenderTarget2D;
+class UTexture;
 struct FVWShadowCaptureInfo;
 
 UCLASS()
@@ -25,9 +26,14 @@ public:
 	void PushHelloTint(const FLinearColor& InColor);
 	void PushSettings(const FVWRenderSettings& Settings, bool bStaticLUTDirty);
 	void PushShadowCapture(UTextureRenderTarget2D* DepthTarget, const FVWShadowCaptureInfo& Info);
+	void PushBlueNoise(UTexture* Texture);
 protected:
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 private:
+	void LoadCloudNoise();
+private:
 	TSharedPtr<FVWViewExtension, ESPMode::ThreadSafe> ViewExtension;
 	TWeakObjectPtr<AActor> WeatherActorPtr;
+
+	bool bCloudNoiseLoaded = false;
 };

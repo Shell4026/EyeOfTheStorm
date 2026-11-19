@@ -31,6 +31,29 @@ namespace
 	{
 		return TStaticSamplerState<ESamplerFilter::SF_Bilinear, ESamplerAddressMode::AM_Wrap, ESamplerAddressMode::AM_Clamp, ESamplerAddressMode::AM_Clamp>::GetRHI();
 	}
+	// 밉맵 생성용
+	TArray<uint8> DownsampleNoise(const TArray<uint8>& Src, uint32 Size)
+	{
+		const uint32 Half = Size >> 1;
+		TArray<uint8> Dst;
+		Dst.SetNumZeroed(Half * Half * Half);
+		for (uint32 Z = 0; Z < Half; ++Z)
+		{
+			for (uint32 Y = 0; Y < Half; ++Y)
+			{
+				for (uint32 X = 0; X < Half; ++X)
+				{
+					uint32 Sum = 0;
+					for (uint32 DZ = 0; DZ < 2; ++DZ)
+						for (uint32 DY = 0; DY < 2; ++DY)
+							for (uint32 DX = 0; DX < 2; ++DX)
+								Sum += Src[(X * 2 + DX) + Size * (Y * 2 + DY) + Size * Size * (Z * 2 + DZ)];
+					Dst[X + Half * Y + Half * Half * Z] = static_cast<uint8>(Sum / 8);
+				}
+			}
+		}
+		return Dst;
+	}
 }
 
 FVWRenderer::FVWRenderer() = default;
@@ -46,6 +69,54 @@ void FVWRenderer::SetSettings_RenderThread(const FVWRenderSettings& InSettings, 
 void FVWRenderer::SetShadowCapture_RenderThread(const FVWShadowCaptureInfo& InInfo)
 {
 	Shadow = InInfo;
+}
+
+void FVWRenderer::InitCloudNoise_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<uint8> PerlinWorley, TArray<uint8> Worley0, TArray<uint8> Worley1, TArray<uint8> Worley2)
+{
+	check(IsInRenderingThread());
+	constexpr uint32 BaseSize = 128;
+	constexpr uint32 NumMips = 8;
+
+	const int32 TexelCount = BaseSize * BaseSize * BaseSize;
+	if (PerlinWorley.Num() != TexelCount || Worley0.Num() != TexelCount || Worley1.Num() != TexelCount || Worley2.Num() != TexelCount)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[VW] 노이즈 데이터 크기가 잘못되었습니다. (기대값 %d)"), TexelCount);
+		return;
+	}
+
+	const FRHITextureCreateDesc Desc = FRHITextureCreateDesc::Create3D(TEXT("VW.CloudNoise"), BaseSize, BaseSize, BaseSize, EPixelFormat::PF_R8G8B8A8)
+		.SetNumMips(NumMips)
+		.SetFlags(ETextureCreateFlags::ShaderResource)
+		.SetInitialState(ERHIAccess::SRVMask);
+	CloudNoise = RHICmdList.CreateTexture(Desc);
+
+	uint32 Size = BaseSize;
+	TArray<uint8> Texels;
+	for (uint32 Mip = 0; Mip < NumMips; ++Mip)
+	{
+		const uint32 Count = Size * Size * Size;
+		Texels.SetNumUninitialized(Count * 4);
+		for (uint32 i = 0; i < Count; ++i)
+		{
+			Texels[i * 4 + 0] = PerlinWorley[i];
+			Texels[i * 4 + 1] = Worley0[i];
+			Texels[i * 4 + 2] = Worley1[i];
+			Texels[i * 4 + 3] = Worley2[i];
+		}
+
+		const FUpdateTextureRegion3D Region(0, 0, 0, 0, 0, 0, Size, Size, Size);
+		RHICmdList.UpdateTexture3D(CloudNoise, Mip, Region, Size * 4, Size * Size * 4, Texels.GetData());
+
+		if (Mip + 1 < NumMips)
+		{
+			PerlinWorley = DownsampleNoise(PerlinWorley, Size);
+			Worley0 = DownsampleNoise(Worley0, Size);
+			Worley1 = DownsampleNoise(Worley1, Size);
+			Worley2 = DownsampleNoise(Worley2, Size);
+			Size >>= 1;
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[VW] 구름 노이즈 3D 텍스처 생성 완료"));
 }
 
 void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, const FViewInputs& Inputs)
@@ -74,7 +145,9 @@ void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, cons
 	else
 	{
 		const uint32 ModeFlags = GetModeFlags();
-		FRDGTextureRef BlueNoiseTex = GSystemTextures.GetBlackDummy(GraphBuilder);
+		FRDGTextureRef BlueNoiseTex = BlueNoise.IsValid()
+			? RegisterExternalTexture(GraphBuilder, BlueNoise, TEXT("VW.BlueNoise"))
+			: GSystemTextures.GetBlackDummy(GraphBuilder);
 
 		StaticLUT StaticLUTs{};
 		RenderStaticLUTs(GraphBuilder, ShaderMap, CommonParams, StaticLUTs);

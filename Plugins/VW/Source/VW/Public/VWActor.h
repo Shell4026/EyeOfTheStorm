@@ -12,6 +12,7 @@ class ADirectionalLight;
 class UBillboardComponent;
 class USceneCaptureComponent2D;
 class UTextureRenderTarget2D;
+class UTexture2D;
 
 UCLASS(meta = (DisplayName = "Volumetric Weather"))
 class VW_API AVWActor : public AActor
@@ -57,6 +58,9 @@ protected:
 	float ShadowAreaKm = 1.f;
 	UPROPERTY(EditAnywhere, Category = "Weather|Shadow", meta = (ClampMin = "0"))
 	float ShadowDepthBiasCm = 200.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather|Scene")
+	TObjectPtr<UTexture2D> BlueNoise;
 private:
 #if WITH_EDITORONLY_DATA
 	UPROPERTY()

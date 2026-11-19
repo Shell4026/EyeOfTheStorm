@@ -6,7 +6,11 @@
 
 #include "RenderingThread.h"
 #include "TextureResource.h"
+#include "Engine/Texture.h"
 #include "Engine/TextureRenderTarget2D.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 void UVWSubSystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -32,6 +36,11 @@ void UVWSubSystem::Deinitialize()
 void UVWSubSystem::RegisterWeatherActor(AActor* Actor)
 {
 	WeatherActorPtr = Actor;
+	if (!bCloudNoiseLoaded)
+	{
+		LoadCloudNoise();
+		bCloudNoiseLoaded = true;
+	}
 
 	ENQUEUE_RENDER_COMMAND(VWSetActive)(
 		[Extension = ViewExtension](FRHICommandListImmediate&)
@@ -94,7 +103,53 @@ void UVWSubSystem::PushShadowCapture(UTextureRenderTarget2D* DepthTarget, const 
 		});
 }
 
+void UVWSubSystem::PushBlueNoise(UTexture* Texture)
+{
+	FTextureResource* Resource = Texture ? Texture->GetResource() : nullptr;
+
+	ENQUEUE_RENDER_COMMAND(VWPushBlueNoise)(
+		[Extension = ViewExtension, Resource](FRHICommandListImmediate&)
+		{
+			if (Extension)
+				Extension->GetRenderer_RenderThread().SetBlueNoise_RenderThread(Resource ? Resource->TextureRHI : nullptr);
+		}
+	);
+}
+
 bool UVWSubSystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
 	return WorldType == EWorldType::Type::Editor || WorldType == EWorldType::Type::PIE || WorldType == EWorldType::Type::Game;
+}
+
+void UVWSubSystem::LoadCloudNoise()
+{
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("VW"));
+	if (!Plugin.IsValid())
+		return;
+
+	const FString NoiseDir = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Resources"), TEXT("Noise"));
+	TArray<uint8> PerlinWorley, Worley0, Worley1, Worley2;
+	const bool bLoaded =
+		FFileHelper::LoadFileToArray(PerlinWorley, *FPaths::Combine(NoiseDir, TEXT("perlinWorley.bin"))) &&
+		FFileHelper::LoadFileToArray(Worley0, *FPaths::Combine(NoiseDir, TEXT("worley0.bin"))) &&
+		FFileHelper::LoadFileToArray(Worley1, *FPaths::Combine(NoiseDir, TEXT("worley1.bin"))) &&
+		FFileHelper::LoadFileToArray(Worley2, *FPaths::Combine(NoiseDir, TEXT("worley2.bin")));
+	if (!bLoaded)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[VW] 노이즈 파일을 찾을 수 없습니다: %s"), *NoiseDir);
+		return;
+	}
+
+	ENQUEUE_RENDER_COMMAND(VWInitCloudNoise)(
+		[Extension = ViewExtension,
+		PerlinWorley = MoveTemp(PerlinWorley), Worley0 = MoveTemp(Worley0),
+		Worley1 = MoveTemp(Worley1), Worley2 = MoveTemp(Worley2)](FRHICommandListImmediate& RHICmdList) mutable
+		{
+			if (Extension)
+			{
+				Extension->GetRenderer_RenderThread().InitCloudNoise_RenderThread(RHICmdList,
+					MoveTemp(PerlinWorley), MoveTemp(Worley0), MoveTemp(Worley1), MoveTemp(Worley2));
+			}
+		}
+	);
 }

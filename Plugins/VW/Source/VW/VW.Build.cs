@@ -65,5 +65,7 @@ public class VW : ModuleRules
 		);
 
         PrivateIncludePaths.Add(Path.Combine(EngineDirectory, "Source", "Runtime", "Renderer", "Internal"));
+
+		RuntimeDependencies.Add(Path.Combine(PluginDirectory, "Resources", "Noise", "*.bin"));
     }
 }

@@ -54,6 +54,8 @@ void AVWActor::PostRegisterAllComponents()
 	if (UVWSubSystem* SubSystem = WorldPtr ? WorldPtr->GetSubsystem<UVWSubSystem>() : nullptr)
 	{
 		SubSystem->RegisterWeatherActor(this);
+		SubSystem->PushBlueNoise(BlueNoise);
+
 		bDirty = true;
 		bHasPushed = false;
 		PushToRenderer();
@@ -81,6 +83,11 @@ void AVWActor::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 	{
 		EnsureShadowTarget();
 		bShadowDirty = true;
+	}
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(AVWActor, BlueNoise))
+	{
+		if (UVWSubSystem* Subsystem = GetWorld() ? GetWorld()->GetSubsystem<UVWSubSystem>() : nullptr)
+			Subsystem->PushBlueNoise(BlueNoise);
 	}
 
 	bDirty = true;

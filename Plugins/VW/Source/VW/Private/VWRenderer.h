@@ -38,6 +38,8 @@ public:
 	void SetHelloTint_RenderThread(const FLinearColor& InColor) { check(IsInRenderingThread()); HelloTint = InColor; }
 	void SetSettings_RenderThread(const FVWRenderSettings& InSettings, bool bInStaticLUTDirty);
 	void SetShadowCapture_RenderThread(const FVWShadowCaptureInfo& InInfo);
+	void SetBlueNoise_RenderThread(FTextureRHIRef InTexture) { BlueNoise = InTexture; }
+	void InitCloudNoise_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<uint8> PerlinWorley, TArray<uint8> Worley0, TArray<uint8> Worley1, TArray<uint8> Worley2);
 
 	void Render(FRDGBuilder& GraphBuilder, const FSceneView& View, const FViewInputs& Inputs);
 private:
@@ -69,4 +71,7 @@ private:
 
 	TRefCountPtr<IPooledRenderTarget> TransmittanceLUT;
 	TRefCountPtr<IPooledRenderTarget> MultiScatteringLUT;
+
+	FTextureRHIRef CloudNoise;
+	FTextureRHIRef BlueNoise;
 };
