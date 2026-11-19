@@ -1,0 +1,124 @@
+#include "VWCommon.ush"
+
+Texture2D<float4> CurCloudTexture;
+Texture2D<float> CurCloudDepthTexture;
+Texture2D<float4> PrevCloudTexture;
+SamplerState LinearClampSampler;
+float HistoryWeight;
+float NeighborhoodGamma;
+RWTexture2D<uint> AccumTexture;
+RWTexture2D<float4> OutCloud;
+
+static const int2 BAYER_22[4] = { int2(0, 0), int2(1, 1), int2(1, 0), int2(0, 1) };
+
+bool IsCurrentFramePixel(int2 Pixel)
+{
+	return all((Pixel & 1) == BAYER_22[VWView.FrameIndex % 4]);
+}
+
+float2 PreviousUV(float3 RayDirUE)
+{
+	const float3 PrevCamRel = RayDirUE * 1e7 + VWView.CamDeltaUE; // 100km = 1e7cm
+	const float4 PrevClip = mul(float4(PrevCamRel, 1.0), VWView.PrevCamRelToClip);
+	if (PrevClip.w <= 0.0)
+		return -1.0;
+
+	const float2 PrevNDC = PrevClip.xy / PrevClip.w;
+	return float2(PrevNDC.x * 0.5 + 0.5, 0.5 - PrevNDC.y * 0.5);
+}
+
+void CurrentNeighborhood(int2 Pixel, int2 Size, out float4 Mean, out float4 StdDev)
+{
+	float4 M1 = 0.0;
+	float4 M2 = 0.0;
+	for (int Y = -1; Y <= 1; ++Y)
+	{
+		for (int X = -1; X <= 1; ++X)
+		{
+			const int2 Coord = clamp(Pixel + int2(X, Y), int2(0, 0), Size - 1);
+			const float4 C = CurCloudTexture.Load(int3(Coord, 0));
+			M1 += C;
+			M2 += C * C;
+		}
+	}
+	Mean = M1 / 9.0;
+	StdDev = sqrt(max(M2 / 9.0 - Mean * Mean, 0.0));
+}
+
+// 같은 2x2 블록에서 이번 프레임에 새로 계산한 픽셀의 값
+float4 FreshBlockCloud(int2 Pixel, int2 Size)
+{
+	// Pixel & ~1 : 현재 2x2블록의 원점
+    const int2 Fresh = min((Pixel & ~1) + BAYER_22[VWView.FrameIndex % 4], Size - 1);
+    return CurCloudTexture.Load(int3(Fresh, 0));
+}
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	uint W, H;
+	OutCloud.GetDimensions(W, H);
+	const int2 Size = int2(W, H);
+	const int2 Pixel = int2(DispatchThreadId.xy);
+	if (any(Pixel >= Size))
+	{
+		return;
+	}
+
+	const float2 UV = (float2(Pixel) + 0.5) / float2(Size);
+	const float3 RayDirUE = GetRayDirUE(UV);
+	uint Accum = AccumTexture[Pixel];
+	const bool bCurrentFramePixel = IsCurrentFramePixel(Pixel);
+
+	const float4 CurCloud = CurCloudTexture.Load(int3(Pixel, 0));
+	const float CurDepth = CurCloudDepthTexture.Load(int3(Pixel, 0));
+	if (bCurrentFramePixel && CurDepth < 0.0) // 구름층을 지나지 않는 픽셀
+	{
+		AccumTexture[Pixel] = 0;
+		OutCloud[Pixel] = CurCloud;
+		return;
+	}
+	if (VWView.HistoryValid == 0)
+	{
+		AccumTexture[Pixel] = 0;
+        OutCloud[Pixel] = bCurrentFramePixel ? CurCloud : FreshBlockCloud(Pixel, Size);
+		return;
+	}
+
+	float MaxHistoryWeight = clamp(HistoryWeight, 0.0, 0.99);
+	if (VWView.HistoryValid == 1) // 카메라가 움직이는 중
+	{
+		MaxHistoryWeight = max(0.0, MaxHistoryWeight * 0.5);
+	}
+
+	const float2 HistoryUV = PreviousUV(RayDirUE);
+	if (any(HistoryUV < 0.0) || any(HistoryUV >= 1.0))
+	{
+		AccumTexture[Pixel] = 0;
+        OutCloud[Pixel] = bCurrentFramePixel ? CurCloud : FreshBlockCloud(Pixel, Size);
+		return;
+	}
+
+	float4 PrevCloud = PrevCloudTexture.SampleLevel(LinearClampSampler, HistoryUV, 0);
+	if (!bCurrentFramePixel) // 이번 프레임에 계산하지 않은 픽셀은 재투영 결과를 그대로
+	{
+        if (Accum == 0)
+            PrevCloud = FreshBlockCloud(Pixel, Size);
+		OutCloud[Pixel] = PrevCloud;
+		return;
+	}
+
+	const float Weight = min(Accum / float(Accum + 1), MaxHistoryWeight);
+    Accum = min(Accum + 1, 16u);
+
+	float4 Mean, StdDev;
+	CurrentNeighborhood(Pixel, Size, Mean, StdDev);
+	const float4 Gamma = NeighborhoodGamma * StdDev;
+	const float4 BoxMin = max(Mean - Gamma, 0.0);
+	float4 BoxMax = Mean + Gamma;
+	BoxMax.a = min(BoxMax.a, 1.0);
+	PrevCloud = clamp(PrevCloud, BoxMin, BoxMax);
+
+	AccumTexture[Pixel] = Accum;
+	OutCloud[Pixel] = float4(lerp(CurCloud.rgb, PrevCloud.rgb, Weight), lerp(CurCloud.a, PrevCloud.a, Weight));
+}

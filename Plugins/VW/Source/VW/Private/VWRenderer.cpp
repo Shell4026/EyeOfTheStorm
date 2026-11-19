@@ -173,6 +173,14 @@ void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, cons
 
 		RenderComposite(GraphBuilder, ShaderMap, CommonParams, Inputs, SkyViewTex, AerialPerspectiveTex, AerialShadowTex, QuarterDepth, CloudTex, CloudDepthTex, HalfDepth);
 
+		const FViewMatrices& VM = View.ViewMatrices;
+		const FVector CamInTranslated = VM.GetViewOrigin() + VM.GetPreViewTranslation();
+		State.PrevCamRelToClip = static_cast<FMatrix44f>(FTranslationMatrix(CamInTranslated) * VM.GetTranslatedViewProjectionMatrix());
+		State.PrevViewOrigin = VM.GetViewOrigin();
+		State.PrevViewLocation = View.ViewLocation;
+		State.PrevViewRotation = View.ViewRotation;
+		State.PrevViewSize = ViewSize;
+		State.bHasPrevFrame = true;
 		State.FrameIndex++;
 		State.LastRenderedFrame = GFrameCounterRenderThread;
 	}
@@ -191,9 +199,24 @@ FVWCommonParams FVWRenderer::CreateCommonParams(const FSceneView& View, const FI
 {
 	const FViewMatrices& ViewMat = View.ViewMatrices;
 
+	const FMatrix ClipToCamRelMat = ViewMat.GetInvTranslatedViewProjectionMatrix();
+
+	const FIntPoint ViewSize = ViewRect.Size();
+	const bool bSizeChanged = State.PrevViewSize != ViewSize;
+	const bool bMoved = !View.ViewLocation.Equals(State.PrevViewLocation, 0.1)
+		|| !View.ViewRotation.Equals(State.PrevViewRotation, 0.01f);
+	// 0 = 무효, 1 = 움직이는중, 2 = 정지 상태
+	uint32 HistoryValid = 2;
+	if (!State.bHasPrevFrame || bSizeChanged || View.bCameraCut)
+		HistoryValid = 0;
+	else if (bMoved)
+		HistoryValid = 1;
+
 	FVWViewUniformParams ViewUB;
-	ViewUB.ClipToCamRel = static_cast<FMatrix44f>(ViewMat.GetInvTranslatedViewProjectionMatrix());
+	ViewUB.ClipToCamRel = static_cast<FMatrix44f>(ClipToCamRelMat);
+	ViewUB.PrevCamRelToClip = State.bHasPrevFrame ? State.PrevCamRelToClip : ViewUB.ClipToCamRel;
 	ViewUB.CamPosWorld = VWSpace::UEToWeatherPos(ViewMat.GetViewOrigin());
+	ViewUB.CamDeltaUE = State.bHasPrevFrame ? FVector3f{ ViewMat.GetViewOrigin() - State.PrevViewOrigin } : FVector3f::ZeroVector;
 	ViewUB.FrameIndex = State.FrameIndex;
 	ViewUB.ViewRectMin = ViewRect.Min;
 	ViewUB.ViewSize = ViewRect.Size();
@@ -483,7 +506,44 @@ void FVWRenderer::RenderCloud(FRDGBuilder& GraphBuilder, FGlobalShaderMap* Shade
 	GraphBuilder.QueueTextureExtraction(CloudRaw, &State.CloudRaw);
 	GraphBuilder.QueueTextureExtraction(CloudRawDepth, &State.CloudRawDepth);
 
-	OutCloud = CloudRaw;
+	FRDGTextureRef PrevCloud = IsReusable(State.CloudHistory)
+		? GraphBuilder.RegisterExternalTexture(State.CloudHistory)
+		: GSystemTextures.GetBlackAlphaOneDummy(GraphBuilder);
+
+	FRDGTextureRef Accum = nullptr;
+	if (IsReusable(State.CloudAccum))
+	{
+		Accum = GraphBuilder.RegisterExternalTexture(State.CloudAccum);
+	}
+	else
+	{
+		// 원본은 r8ui. UAV 로드 호환성을 위해 R32_UINT 사용
+		Accum = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
+			HalfSize, EPixelFormat::PF_R32_UINT, FClearValueBinding::None, UAVTextureFlags), TEXT("VW.CloudAccum"));
+		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Accum), 0u);
+	}
+
+	FRDGTextureRef CloudHistory = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
+		HalfSize, EPixelFormat::PF_FloatRGBA, FClearValueBinding::None, UAVTextureFlags), TEXT("VW.CloudHistory"));
+	{
+		FVWCloudTRCS::FParameters* Param = GraphBuilder.AllocParameters<FVWCloudTRCS::FParameters>();
+		Param->Common = Common;
+		Param->CurCloudTexture = CloudRaw;
+		Param->CurCloudDepthTexture = CloudRawDepth;
+		Param->PrevCloudTexture = PrevCloud;
+		Param->LinearClampSampler = GetLinearClampSampler();
+		Param->HistoryWeight = Settings.Quality.HistoryWeight;
+		Param->NeighborhoodGamma = Settings.Quality.NeighborhoodGamma;
+		Param->AccumTexture = GraphBuilder.CreateUAV(Accum);
+		Param->OutCloud = GraphBuilder.CreateUAV(CloudHistory);
+
+		TShaderMapRef<FVWCloudTRCS> CS{ ShaderMap };
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.CloudTR"), CS, Param, FComputeShaderUtils::GetGroupCount(HalfSize, 16));
+	}
+	GraphBuilder.QueueTextureExtraction(CloudHistory, &State.CloudHistory);
+	GraphBuilder.QueueTextureExtraction(Accum, &State.CloudAccum);
+
+	OutCloud = CloudHistory;
 	OutCloudDepth = CloudRawDepth;
 }
 

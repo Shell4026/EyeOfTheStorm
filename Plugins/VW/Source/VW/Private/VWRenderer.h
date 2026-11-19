@@ -52,9 +52,19 @@ private:
 	{
 		TRefCountPtr<IPooledRenderTarget> CloudRaw;
 		TRefCountPtr<IPooledRenderTarget> CloudRawDepth;
+		TRefCountPtr<IPooledRenderTarget> CloudHistory;
+		TRefCountPtr<IPooledRenderTarget> CloudAccum;
+
+		FMatrix44f PrevCamRelToClip = FMatrix44f::Identity;
+		FVector PrevViewOrigin = FVector::ZeroVector;
+		FVector PrevViewLocation = FVector::ZeroVector;
+		FRotator PrevViewRotation = FRotator::ZeroRotator;
+		FIntPoint PrevViewSize = FIntPoint::ZeroValue;
 
 		uint32 FrameIndex = 0;
 		uint64 LastRenderedFrame = 0;
+
+		bool bHasPrevFrame = false;
 	};
 	FVWCommonParams CreateCommonParams(const FSceneView& View, const FIntRect& ViewRect, const FViewState& State) const;
 

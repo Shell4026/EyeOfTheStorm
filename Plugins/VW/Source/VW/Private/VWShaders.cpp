@@ -14,3 +14,4 @@ IMPLEMENT_GLOBAL_SHADER(FVWAerialPerspectiveLUTCS, "/Plugin/VW/Private/AerialPer
 IMPLEMENT_GLOBAL_SHADER(FVWDepthDownsampleCS, "/Plugin/VW/Private/DepthDownsample.usf", "MainCS", SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FVWAerialShadowCS, "/Plugin/VW/Private/AerialShadow.usf", "MainCS", SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FVWCloudCS, "/Plugin/VW/Private/Cloud.usf", "MainCS", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FVWCloudTRCS, "/Plugin/VW/Private/CloudTR.usf", "MainCS", SF_Compute);
