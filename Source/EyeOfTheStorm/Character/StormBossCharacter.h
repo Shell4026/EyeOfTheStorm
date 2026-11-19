@@ -6,6 +6,7 @@
 
 class UBehaviorTree;
 class UStormMeleeComponent;
+class UStormWeatherPreset;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FStormBossPhaseChangedSignature, int32, NewPhase);
 DECLARE_MULTICAST_DELEGATE_OneParam(FStormBossAttackEndedSignature, bool);
@@ -42,6 +43,9 @@ struct EYEOFTHESTORM_API FStormBossPhase
 	float PlayRate = 1.f;
 	UPROPERTY(EditAnywhere, Category = "Storm|Boss", meta = (ClampMin = "0"))
 	float CooldownScale = 1.f;
+	// 이 페이즈가 되면 바꿀 날씨. 첫 페이즈는 시작할 때 바로 바꾸고, 그다음부터는 프리셋의 전환 시간 동안 바꾼다. 비우면 날씨를 그대로 둔다
+	UPROPERTY(EditAnywhere, Category = "Storm|Boss")
+	TObjectPtr<UStormWeatherPreset> Weather;
 };
 
 UCLASS()
@@ -82,6 +86,7 @@ private:
 	void UpdateRotationMode();
 	// 패턴의 Montages 중 비어 있지 않은 것 하나를 무작위로 고른다. 없으면 nullptr
 	UAnimMontage* PickPatternMontage(int32 Index) const;
+	void ApplyPhaseWeather(bool bInstant);
 
 	const FStormBossPhase& GetPhaseSettings() const;
 	bool IsPatternAvailable(int32 Index, float Distance, float Now) const;

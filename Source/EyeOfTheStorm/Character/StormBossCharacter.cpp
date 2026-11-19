@@ -8,6 +8,8 @@
 #include "Character/StormPlayerCharacter.h"
 #include "Combat/StormHealthComponent.h"
 #include "Combat/StormMeleeComponent.h"
+#include "Weather/StormWeatherPreset.h"
+#include "Weather/StormWeatherSubsystem.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -202,6 +204,7 @@ void AStormBossCharacter::BeginPlay()
 	PatternReadyTimes.SetNumZeroed(Patterns.Num());
 	HealthComponent->OnThresholdCrossed.AddDynamic(this, &AStormBossCharacter::HandleThresholdCrossed);
 	UpdateRotationMode();
+	ApplyPhaseWeather(true);
 }
 
 void AStormBossCharacter::HandleDeath(AActor* Killer)
@@ -250,6 +253,7 @@ void AStormBossCharacter::HandleThresholdCrossed(float Threshold)
 {
 	++Phase;
 	UE_LOG(LogStormBoss, Log, TEXT("%s: 페이즈 %d (체력 %.0f%% 경계)"), *GetName(), Phase, Threshold * 100.f);
+	ApplyPhaseWeather(false);
 	OnPhaseChanged.Broadcast(Phase);
 }
 
@@ -271,6 +275,16 @@ UAnimMontage* AStormBossCharacter::PickPatternMontage(int32 Index) const
 		}
 	}
 	return Candidates.Num() > 0 ? Candidates[FMath::RandRange(0, Candidates.Num() - 1)] : nullptr;
+}
+
+void AStormBossCharacter::ApplyPhaseWeather(bool bInstant)
+{
+	UStormWeatherPreset* Preset = GetPhaseSettings().Weather;
+	UStormWeatherSubsystem* Weather = GetWorld()->GetSubsystem<UStormWeatherSubsystem>();
+	if (Preset && Weather)
+	{
+		Weather->TransitionTo(Preset, bInstant);
+	}
 }
 
 const FStormBossPhase& AStormBossCharacter::GetPhaseSettings() const
