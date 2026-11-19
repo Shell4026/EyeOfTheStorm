@@ -8,7 +8,9 @@ class UCameraComponent;
 class UCurveFloat;
 class UInputAction;
 class UInputMappingContext;
+class AStormBossCharacter;
 class USpringArmComponent;
+class UStormHUDWidget;
 class UStormLockOnComponent;
 class UStormMeleeComponent;
 struct FInputActionValue;
@@ -31,6 +33,8 @@ public:
 	// 이때부터 공격이 끝날 때까지 회피로 끊을 수 있다.
 	void OpenComboWindow();
 	void CloseComboWindow();
+	// 보스가 이 플레이어를 전투 대상으로 잡으면 부른다. HUD에 보스 체력바를 띄운다.
+	void SetEngagedBoss(AStormBossCharacter* Boss);
 
 	UFUNCTION(BlueprintPure, Category = "Storm|Player")
 	UStormLockOnComponent* GetLockOn() const { return LockOn; }
@@ -42,9 +46,13 @@ public:
 	bool IsLockedOn() const;
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void HandleDeath(AActor* Killer) override;
 private:
+	// 로컬 플레이어가 조종 중이고 아직 HUD가 없으면 만든다. BeginPlay와 컨트롤러가 바뀔 때 부른다.
+	void CreateHUD();
+
 	void Move(const FInputActionValue& Value);
 	void MoveCompleted(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
@@ -185,7 +193,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storm|Appearance")
 	TMap<FName, float> DefaultMorphTargets;
+
+	// UI
+
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|UI")
+	TSubclassOf<UStormHUDWidget> HUDWidgetClass;
 private:
+	UPROPERTY(Transient)
+	TObjectPtr<UStormHUDWidget> HUDWidget;
+
 	FVector2D MoveInput = FVector2D::ZeroVector;
 
 	float TargetZoomDistance = 0.f;

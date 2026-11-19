@@ -63,6 +63,7 @@ public:
 	bool HasAvailablePattern() const;
 
 	UBehaviorTree* GetBehaviorTree() const { return BehaviorTree; }
+	const FText& GetBossName() const { return BossName; }
 	UFUNCTION(BlueprintPure, Category = "Storm|Boss")
 	UStormMeleeComponent* GetMelee() const { return Melee; }
 	UFUNCTION(BlueprintPure, Category = "Storm|Boss")
@@ -107,6 +108,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Boss")
 	TArray<FStormBossPhase> Phases;
+
+	// UI
+
+	// HUD 보스 체력바 위에 띄우는 이름
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|UI")
+	FText BossName;
 private:
 	TWeakObjectPtr<AActor> CombatTarget;
 	int32 Phase = 0;

@@ -19,6 +19,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "InputActionValue.h"
 #include "TimerManager.h"
+#include "UI/StormHUDWidget.h"
 
 static TAutoConsoleVariable<int32> CVarStormInvincibleCheat(TEXT("Storm.Melee.Inv"), 0, TEXT("1: 무적"), EConsoleVariableFlags::ECVF_Cheat);
 
@@ -108,6 +109,12 @@ void AStormPlayerCharacter::NotifyControllerChanged()
 			}
 		}
 	}
+
+	// 게임 시작 때는 BeginPlay보다 먼저 빙의되므로 BeginPlay에서 만든다. 이건 게임 중에 빙의될 때.
+	if (HasActorBegunPlay())
+	{
+		CreateHUD();
+	}
 }
 
 void AStormPlayerCharacter::OnConstruction(const FTransform& Transform)
@@ -156,6 +163,14 @@ void AStormPlayerCharacter::CloseComboWindow()
 	bComboWindowOpen = false;
 }
 
+void AStormPlayerCharacter::SetEngagedBoss(AStormBossCharacter* Boss)
+{
+	if (HUDWidget)
+	{
+		HUDWidget->SetBoss(Boss);
+	}
+}
+
 bool AStormPlayerCharacter::IsLockedOn() const
 {
 	return LockOn->IsLockedOn();
@@ -171,6 +186,17 @@ void AStormPlayerCharacter::BeginPlay()
 	TargetZoomDistance = CameraBoom->TargetArmLength;
 
 	UpdateRotationMode();
+	CreateHUD();
+}
+
+void AStormPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (HUDWidget)
+	{
+		HUDWidget->RemoveFromParent();
+		HUDWidget = nullptr;
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void AStormPlayerCharacter::Tick(float DeltaSeconds)
@@ -197,6 +223,18 @@ void AStormPlayerCharacter::HandleDeath(AActor* Killer)
 		DisableInput(PC);
 	}
 	Super::HandleDeath(Killer);
+}
+
+void AStormPlayerCharacter::CreateHUD()
+{
+	APlayerController* PC = Cast<APlayerController>(Controller);
+	if (HUDWidget || !HUDWidgetClass || !PC || !PC->IsLocalController())
+	{
+		return;
+	}
+	HUDWidget = CreateWidget<UStormHUDWidget>(PC, HUDWidgetClass);
+	HUDWidget->AddToViewport();
+	HUDWidget->SetPlayer(this);
 }
 
 void AStormPlayerCharacter::Move(const FInputActionValue& Value)

@@ -5,6 +5,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "BrainComponent.h"
+#include "Character/StormPlayerCharacter.h"
 #include "Combat/StormHealthComponent.h"
 #include "Combat/StormMeleeComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -158,6 +159,10 @@ void AStormBossCharacter::StopPattern()
 void AStormBossCharacter::SetCombatTarget(AActor* NewTarget)
 {
 	CombatTarget = NewTarget;
+	if (AStormPlayerCharacter* Player = Cast<AStormPlayerCharacter>(NewTarget))
+	{
+		Player->SetEngagedBoss(this);
+	}
 }
 
 bool AStormBossCharacter::HasAvailablePattern() const
