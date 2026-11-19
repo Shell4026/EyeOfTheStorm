@@ -31,6 +31,8 @@ public:
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
+
+	void SetArtist(const FVWArtistSetting& InArtist) { Artist = InArtist; bDirty = true; }
 protected:
 	virtual void BeginPlay() override;
 private:
