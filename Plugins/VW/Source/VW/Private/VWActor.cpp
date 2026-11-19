@@ -101,6 +101,7 @@ void AVWActor::Tick(float DeltaTime)
 	if (Artist.TimeSpeed > 0.f)
 	{
 		Artist.Hour = FMath::Fmod(Artist.Hour + Artist.TimeSpeed * DeltaTime, 24.f);
+		CloudTimeHours += Artist.TimeSpeed * DeltaTime;
 		bDirty = true;
 	}
 
@@ -182,7 +183,10 @@ void AVWActor::PushToRenderer()
 	UVWSubSystem* const SubSystem = WorldPtr ? WorldPtr->GetSubsystem<UVWSubSystem>() : nullptr;
 	if (SubSystem == nullptr)
 		return;
-	const FVWRenderSettings Settings = VWParameterMapper::ConvertRenderSetting(Artist, Quality);
+
+	FVWRenderSettings Settings = VWParameterMapper::ConvertRenderSetting(Artist, Quality);
+	Settings.Cloud.TimeHours = CloudTimeHours;
+
 	const bool bStaticLUTDirty = !bHasPushed
 		|| LastAtmosphereThickness != Artist.AtmosphereThickness
 		|| LastRayleigh != Artist.RayleighScatteringStrength

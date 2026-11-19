@@ -2,6 +2,8 @@
 #include "/Engine/Private/Common.ush"
 
 #define VW_PI 3.14159265359
+static const float CLOUD_HEIGHT = 2000.0; // m
+static const float CLOUD_THICKNESS = 5000.0; // m
 
 float3 UEToWDir(float3 D)
 {

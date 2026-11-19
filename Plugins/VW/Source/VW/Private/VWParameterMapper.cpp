@@ -20,6 +20,7 @@ FVWRenderSettings VWParameterMapper::ConvertRenderSetting(const FVWArtistSetting
 	Setting.Cloud.MinSteps = FMath::Max(Quality.CloudMinSteps, 1);
 	Setting.Cloud.MaxSteps = FMath::Max(Quality.CloudMaxSteps, Quality.CloudMinSteps);
 	Setting.Cloud.LightViewSteps = FMath::Max(Quality.CloudLightViewSteps, 1);
+	Setting.Cloud.MaxMarchDistance = Quality.CloudRayMarchMaxDistance;
 	Setting.Cloud.ModeFlags = Quality.bLightViewDistanceLimit ? 1u : 0u;
 	return Setting;
 }

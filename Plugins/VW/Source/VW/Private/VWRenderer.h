@@ -48,18 +48,30 @@ private:
 		FRDGTextureRef Transmittance = nullptr;
 		FRDGTextureRef MultiScattering = nullptr;
 	};
-	FVWCommonParams CreateCommonParams(const FSceneView& View, const FIntRect& ViewRect) const;
+	struct FViewState
+	{
+		TRefCountPtr<IPooledRenderTarget> CloudRaw;
+		TRefCountPtr<IPooledRenderTarget> CloudRawDepth;
+
+		uint32 FrameIndex = 0;
+		uint64 LastRenderedFrame = 0;
+	};
+	FVWCommonParams CreateCommonParams(const FSceneView& View, const FIntRect& ViewRect, const FViewState& State) const;
 
 	void RenderHello(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FViewInputs& Inputs);
 	void RenderDebugView(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FViewInputs& Inputs, const FVWCommonParams& CommonParams, uint32 DebugMode);
 	void RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, StaticLUT& Output);
 	FRDGTextureRef RenderSkyViewLUT(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, FRDGTextureRef Transmittance, FRDGTextureRef MultiScattering);
 	void RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, 
-		FRDGTextureRef SkyView, FRDGTextureRef AerialPerspective, FRDGTextureRef AerialShadow, FRDGTextureRef QuarterDepth);
+		FRDGTextureRef SkyView, FRDGTextureRef AerialPerspective, FRDGTextureRef AerialShadow, FRDGTextureRef QuarterDepth, 
+		FRDGTextureRef CloudTex, FRDGTextureRef CloudDpethTex, FRDGTextureRef HalfDepth);
 	FRDGTextureRef RenderAerialPerspective(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef Transmittance, FRDGTextureRef MultiScattering);
 	FRDGTextureRef RenderLowResDepth(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, int32 Divider);
 	FRDGTextureRef RenderAerialShadow(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, 
 		const FViewInputs& Inputs, FRDGTextureRef AerialPerspective, FRDGTextureRef BlueNoiseTexture);
+	void RenderCloud(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common,
+		const FViewInputs& Inputs, FViewState& State, FRDGTextureRef Transmittance, FRDGTextureRef BlueNoiseTexture,
+		FRDGTextureRef& OutCloud, FRDGTextureRef& OutCloudDepth);
 
 	uint32 GetModeFlags() const;
 private:
@@ -74,4 +86,6 @@ private:
 
 	FTextureRHIRef CloudNoise;
 	FTextureRHIRef BlueNoise;
+
+	TMap<uint32, FViewState> ViewStates;
 };

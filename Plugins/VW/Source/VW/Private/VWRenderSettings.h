@@ -40,6 +40,7 @@ struct FVWCloudSettings
 	float Brightness = 1.f;
 	float DensityPMin = 0.f;
 	float DensityPFactor = 1.25f;
+	float MaxMarchDistance = 50'000.f;
 
 	FVector2f BezierA{ 0.f, 0.f };
 	FVector2f BezierB{ 0.2f, 0.5f };

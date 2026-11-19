@@ -31,6 +31,10 @@ namespace
 	{
 		return TStaticSamplerState<ESamplerFilter::SF_Bilinear, ESamplerAddressMode::AM_Wrap, ESamplerAddressMode::AM_Clamp, ESamplerAddressMode::AM_Clamp>::GetRHI();
 	}
+	FRHISamplerState* GetNoiseSampler()
+	{
+		return TStaticSamplerState<ESamplerFilter::SF_Trilinear, ESamplerAddressMode::AM_Wrap, ESamplerAddressMode::AM_Wrap, ESamplerAddressMode::AM_Wrap>::GetRHI();
+	}
 	// 밉맵 생성용
 	TArray<uint8> DownsampleNoise(const TArray<uint8>& Src, uint32 Size)
 	{
@@ -136,7 +140,8 @@ void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, cons
 		return;
 	}
 
-	const FVWCommonParams CommonParams = CreateCommonParams(View, Inputs.ViewRect);
+	FViewState& State = ViewStates.FindOrAdd(View.GetViewKey());
+	const FVWCommonParams CommonParams = CreateCommonParams(View, Inputs.ViewRect, State);
 	const int32 DebugMode = CVarVWDebugView.GetValueOnRenderThread();
 	if (DebugMode != 0)
 	{
@@ -156,21 +161,40 @@ void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, cons
 			? RenderAerialPerspective(GraphBuilder, ShaderMap, CommonParams, Inputs, StaticLUTs.Transmittance, StaticLUTs.MultiScattering)
 			: GSystemTextures.GetVolumetricBlackDummy(GraphBuilder);
 		FRDGTextureRef QuarterDepth = RenderLowResDepth(GraphBuilder, ShaderMap, CommonParams, Inputs, 4);
+		FRDGTextureRef HalfDepth = RenderLowResDepth(GraphBuilder, ShaderMap, CommonParams, Inputs, 2);
 		FRDGTextureRef AerialShadowTex = (ModeFlags & 2)
 			? RenderAerialShadow(GraphBuilder, ShaderMap, CommonParams, Inputs, AerialPerspectiveTex, BlueNoiseTex)
 			: GSystemTextures.GetBlackDummy(GraphBuilder);
 		
-		RenderComposite(GraphBuilder, ShaderMap, CommonParams, Inputs, SkyViewTex, AerialPerspectiveTex, AerialShadowTex, QuarterDepth);
+		FRDGTextureRef CloudTex = GSystemTextures.GetBlackAlphaOneDummy(GraphBuilder);
+		FRDGTextureRef CloudDepthTex = GSystemTextures.GetBlackDummy(GraphBuilder);
+		if (ModeFlags & 4)
+			RenderCloud(GraphBuilder, ShaderMap, CommonParams, Inputs, State, StaticLUTs.Transmittance, BlueNoiseTex, CloudTex, CloudDepthTex);
+
+		RenderComposite(GraphBuilder, ShaderMap, CommonParams, Inputs, SkyViewTex, AerialPerspectiveTex, AerialShadowTex, QuarterDepth, CloudTex, CloudDepthTex, HalfDepth);
+
+		State.FrameIndex++;
+		State.LastRenderedFrame = GFrameCounterRenderThread;
+	}
+
+	// 오래 안 쓰인 뷰 제거
+	for (auto It = ViewStates.CreateIterator(); It; ++It)
+	{
+		if (GFrameCounterRenderThread - It.Value().LastRenderedFrame > 120)
+		{
+			It.RemoveCurrent();
+		}
 	}
 }
 
-FVWCommonParams FVWRenderer::CreateCommonParams(const FSceneView& View, const FIntRect& ViewRect) const
+FVWCommonParams FVWRenderer::CreateCommonParams(const FSceneView& View, const FIntRect& ViewRect, const FViewState& State) const
 {
 	const FViewMatrices& ViewMat = View.ViewMatrices;
 
 	FVWViewUniformParams ViewUB;
 	ViewUB.ClipToCamRel = static_cast<FMatrix44f>(ViewMat.GetInvTranslatedViewProjectionMatrix());
 	ViewUB.CamPosWorld = VWSpace::UEToWeatherPos(ViewMat.GetViewOrigin());
+	ViewUB.FrameIndex = State.FrameIndex;
 	ViewUB.ViewRectMin = ViewRect.Min;
 	ViewUB.ViewSize = ViewRect.Size();
 
@@ -187,9 +211,31 @@ FVWCommonParams FVWRenderer::CreateCommonParams(const FSceneView& View, const FI
 	AtmoUB.SunDir = Settings.Lighting.SunDirW;
 	AtmoUB.ModeFlags = GetModeFlags();
 
+	const FVWCloudSettings& C = Settings.Cloud;
+	FVWCloudUniformParameters CloudUB;
+	CloudUB.MinSteps = C.MinSteps;
+	CloudUB.MaxSteps = C.MaxSteps;
+	CloudUB.LightViewSteps = C.LightViewSteps;
+	CloudUB.ModeFlags = C.ModeFlags;
+	CloudUB.Time = C.TimeHours;
+	CloudUB.Tiling = C.Tiling;
+	CloudUB.Tiling2 = C.Tiling2;
+	CloudUB.ExtinctionCoefficient = C.ExtinctionCoefficient;
+	CloudUB.Coverage = C.Coverage;
+	CloudUB.AnvilBias = C.AnvilBias;
+	CloudUB.Brightness = C.Brightness;
+	CloudUB.DensityPMin = C.DensityPMin;
+	CloudUB.MaxMarchDistance = C.MaxMarchDistance;
+	CloudUB.BezierAB = FVector4f(C.BezierA.X, C.BezierA.Y, C.BezierB.X, C.BezierB.Y);
+	CloudUB.BezierCD = FVector4f(C.BezierC.X, C.BezierC.Y, C.BezierD.X, C.BezierD.Y);
+	CloudUB.WindVelKmh = C.WindVelKmh;
+	CloudUB.DensityPFactor = C.DensityPFactor;
+	CloudUB.CloudColor = FVector4f(C.CloudColor.R, C.CloudColor.G, C.CloudColor.B, C.CloudColor.A);
+
 	FVWCommonParams CommonParams;
 	CommonParams.VWView = TUniformBufferRef<FVWViewUniformParams>::CreateUniformBufferImmediate(ViewUB, EUniformBufferUsage::UniformBuffer_SingleFrame);
 	CommonParams.VWAtmosphere = TUniformBufferRef<FVWAtmosphereUniformParams>::CreateUniformBufferImmediate(AtmoUB, EUniformBufferUsage::UniformBuffer_SingleFrame);
+	CommonParams.VWCloud = TUniformBufferRef<FVWCloudUniformParameters>::CreateUniformBufferImmediate(CloudUB, UniformBuffer_SingleFrame);
 	return CommonParams;
 }
 
@@ -299,7 +345,8 @@ FRDGTextureRef FVWRenderer::RenderSkyViewLUT(FRDGBuilder& GraphBuilder, FGlobalS
 }
 
 void FVWRenderer::RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, 
-	FRDGTextureRef SkyView, FRDGTextureRef AerialPerspective, FRDGTextureRef AerialShadow, FRDGTextureRef QuarterDepth)
+	FRDGTextureRef SkyView, FRDGTextureRef AerialPerspective, FRDGTextureRef AerialShadow, FRDGTextureRef QuarterDepth,
+	FRDGTextureRef CloudTex, FRDGTextureRef CloudDpethTex, FRDGTextureRef HalfDepth)
 {
 	const FIntPoint ViewSize = Inputs.ViewRect.Size();
 	FRDGTextureRef Output = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
@@ -313,6 +360,9 @@ void FVWRenderer::RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* S
 	Param->AerialPerspectiveLUT = AerialPerspective;
 	Param->AerialShadowLUT = AerialShadow;
 	Param->QuarterDepth = QuarterDepth;
+	Param->HalfDepth = HalfDepth;
+	Param->CloudTexture = CloudTex;
+	Param->CloudDepthTexture = CloudDpethTex;
 	Param->SkyViewSampler = GetSkyViewSampler();
 	Param->LinearClampSampler = GetLinearClampSampler();
 	Param->Output = GraphBuilder.CreateUAV(Output);
@@ -386,6 +436,57 @@ FRDGTextureRef FVWRenderer::RenderAerialShadow(FRDGBuilder& GraphBuilder, FGloba
 	return AerialShadow;
 }
 
+void FVWRenderer::RenderCloud(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FViewState& State, FRDGTextureRef Transmittance, FRDGTextureRef BlueNoiseTexture, FRDGTextureRef& OutCloud, FRDGTextureRef& OutCloudDepth)
+{
+	RDG_EVENT_SCOPE(GraphBuilder, "VW.Cloud");
+
+	const FIntPoint HalfSize = FIntPoint::DivideAndRoundUp(Inputs.ViewRect.Size(), 2);
+	auto IsReusable = [&HalfSize](const TRefCountPtr<IPooledRenderTarget>& Target)
+		{
+			return Target.IsValid() && Target->GetDesc().Extent == HalfSize;
+		};
+
+	FRDGTextureRef CloudRaw = nullptr;
+	FRDGTextureRef CloudRawDepth = nullptr;
+	if (IsReusable(State.CloudRaw) && IsReusable(State.CloudRawDepth))
+	{
+		CloudRaw = GraphBuilder.RegisterExternalTexture(State.CloudRaw);
+		CloudRawDepth = GraphBuilder.RegisterExternalTexture(State.CloudRawDepth);
+	}
+	else
+	{
+		// 처음이거나 창 크기가 바뀌었으면 새로 만들고 초기화
+		CloudRaw = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
+			HalfSize, EPixelFormat::PF_FloatRGBA, FClearValueBinding::None, UAVTextureFlags), TEXT("VW.CloudRaw"));
+		CloudRawDepth = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
+			HalfSize, EPixelFormat::PF_R32_FLOAT, FClearValueBinding::None, UAVTextureFlags), TEXT("VW.CloudRawDepth"));
+		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(CloudRaw), FLinearColor(0.f, 0.f, 0.f, 1.f));
+		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(CloudRawDepth), -1.f);
+	}
+	{
+		FVWCloudCS::FParameters* Param = GraphBuilder.AllocParameters<FVWCloudCS::FParameters>();
+		Param->Common = Common;
+		Param->NoiseTexture = RegisterExternalTexture(GraphBuilder, CloudNoise, TEXT("VW.CloudNoise"));
+		Param->NoiseSampler = GetNoiseSampler();
+		Param->BlueNoiseTexture = BlueNoiseTexture;
+		Param->SceneDepthTexture = Inputs.SceneDepth;
+		Param->TransmittanceLUT = Transmittance;
+		Param->LinearClampSampler = GetLinearClampSampler();
+		Param->OutSize = HalfSize;
+		Param->OutCloud = GraphBuilder.CreateUAV(CloudRaw);
+		Param->OutCloudDepth = GraphBuilder.CreateUAV(CloudRawDepth);
+
+		TShaderMapRef<FVWCloudCS> CS(ShaderMap);
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("VW.CloudRaymarch"), CS, Param, FComputeShaderUtils::GetGroupCount(FIntPoint::DivideAndRoundUp(HalfSize, 2), 16));
+	}
+	// 이 뷰만의 텍스처라 지연 추출로 충분
+	GraphBuilder.QueueTextureExtraction(CloudRaw, &State.CloudRaw);
+	GraphBuilder.QueueTextureExtraction(CloudRawDepth, &State.CloudRawDepth);
+
+	OutCloud = CloudRaw;
+	OutCloudDepth = CloudRawDepth;
+}
+
 uint32 FVWRenderer::GetModeFlags() const
 {
 	const FVWQualitySettings& Quality = Settings.Quality;
@@ -394,5 +495,7 @@ uint32 FVWRenderer::GetModeFlags() const
 		Flags |= 1;
 	if (Quality.bVolumetricShadow && Shadow.DepthTexture.IsValid())
 		Flags |= 2;
+	if (Quality.bCloud && CloudNoise.IsValid())
+		Flags |= 4;
 	return Flags;
 }

@@ -1,0 +1,303 @@
+#include "VWAtmosphere.ush"
+
+Texture3D<float4> NoiseTexture;
+SamplerState NoiseSampler;
+Texture2D<float4> BlueNoiseTexture;
+Texture2D<float> SceneDepthTexture;
+Texture2D<float4> TransmittanceLUT;
+SamplerState LinearClampSampler;
+int2 OutSize;
+RWTexture2D<float4> OutCloud;
+RWTexture2D<float> OutCloudDepth;
+
+float Remap(float Value, float OriginalMin, float OriginalMax, float NewMin, float NewMax)
+{
+	return NewMin + ((Value - OriginalMin) / (OriginalMax - OriginalMin)) * (NewMax - NewMin);
+}
+
+float BezierCurve(float T)
+{
+	const float2 A = VWCloud.BezierAB.xy;
+	const float2 B = VWCloud.BezierAB.zw;
+	const float2 C = VWCloud.BezierCD.xy;
+	const float2 D = VWCloud.BezierCD.zw;
+	const float2 Mid = (B + C) * 0.5;
+	if (T < 0.5)
+	{
+		const float S = T * 2.0;
+		const float U = 1.0 - S;
+		return (U * U * A + 2.0 * U * S * B + S * S * Mid).y;
+	}
+	const float S = (T - 0.5) * 2.0;
+	const float U = 1.0 - S;
+	return (U * U * Mid + 2.0 * U * S * C + S * S * D).y;
+}
+
+float2 GetCloudVelocity()
+{
+	const float2 Vel = VWCloud.WindVelKmh * 1000.0;	// km/h -> m/h
+	const float VoxelSize = 1.0 / VWCloud.Tiling;
+	return Vel * VoxelSize * VWCloud.Time;
+}
+
+float GetSampleHeightRatio(float InnerRadius, float OuterRadius, float3 SamplePos)
+{
+	const float SampleRadius = length(SamplePos - PlanetCenterW());
+	return saturate((SampleRadius - InnerRadius) / (OuterRadius - InnerRadius));
+}
+
+float GetHeightMask(float InnerRadius, float OuterRadius, float3 SamplePos)
+{
+	const float HeightRatio = GetSampleHeightRatio(InnerRadius, OuterRadius, SamplePos);
+	return smoothstep(0.0, 0.15, HeightRatio) * (1.0 - smoothstep(0.85, 1.0, HeightRatio));
+}
+
+float GetCoverage(float InnerRadius, float OuterRadius, float3 SamplePos)
+{
+	const float Coverage = saturate(VWCloud.Coverage);
+	const float Height = smoothstep(0.0, 1.0, GetSampleHeightRatio(InnerRadius, OuterRadius, SamplePos));
+	const float VerticalBias = saturate(VWCloud.AnvilBias) * 2.0 - 1.0; // -1 ~ 1
+	const float VerticalCoverage = saturate(1.0 + VerticalBias * (Height * 2.0 - 1.0));
+	return 1.0 - Coverage * VerticalCoverage;
+}
+
+float GetDensity(float InnerRadius, float OuterRadius, float3 SamplePos)
+{
+	const float HeightMask = GetHeightMask(InnerRadius, OuterRadius, SamplePos);
+	const float2 Offset = GetCloudVelocity();
+	const float3 UVW0 = SamplePos / VWCloud.Tiling + float3(Offset.x, 0.0, Offset.y);
+	const float3 UVW1 = SamplePos / VWCloud.Tiling2 + float3(Offset.x, 0.0, Offset.y);
+
+	const float PerlinWorley = NoiseTexture.SampleLevel(NoiseSampler, UVW0, 0).r;
+	const float3 Worley = NoiseTexture.SampleLevel(NoiseSampler, UVW1, 0).gba;
+
+	const float WorleyFBM = Worley.r * 0.625 + Worley.g * 0.125 + Worley.b * 0.25;
+	float Cloud = Remap(PerlinWorley, WorleyFBM - 1.0, 1.0, 0.0, 1.0);
+	const float Coverage = GetCoverage(InnerRadius, OuterRadius, SamplePos);
+	Cloud = saturate(Remap(Cloud, Coverage, 1.0, 0.0, 1.0));
+	return Cloud * HeightMask;
+}
+
+float GetDensityLOD(float InnerRadius, float OuterRadius, float3 SamplePos, float Lod)
+{
+	const float HeightMask = GetHeightMask(InnerRadius, OuterRadius, SamplePos);
+	const float2 Offset = GetCloudVelocity();
+	const float3 UVW = SamplePos / VWCloud.Tiling + float3(Offset.x, 0.0, Offset.y);
+	float Cloud = NoiseTexture.SampleLevel(NoiseSampler, UVW, Lod).r;
+	const float Coverage = GetCoverage(InnerRadius, OuterRadius, SamplePos);
+	Cloud = saturate(Remap(Cloud, Coverage, 1.0, 0.0, 1.0));
+	return Cloud * HeightMask;
+}
+
+float CloudToSunTransmittance(float3 A, float3 B, float Distance, uint StepCount, float InnerRadius, float OuterRadius)
+{
+	const float3 Dir = (B - A) / Distance;
+	const float Cone = tan(radians(45.0));
+	const float VoxelSize = VWCloud.Tiling / 128.0;
+	const float SigmaA = 4.4 * 1e-6 * VWCloud.ExtinctionCoefficient;
+
+	float Transmittance = 1.0;
+	for (uint i = 0; i < StepCount; ++i)
+	{
+		const float U0 = float(i) / float(StepCount);
+		const float U1 = float(i + 1) / float(StepCount);
+		const float T0 = Distance * U0 * U0;
+		const float T1 = Distance * U1 * U1;
+		const float DT = T1 - T0;
+		const float T = (T0 + T1) * 0.5;
+
+		const float3 SamplePos = A + Dir * T;
+		const float ConeRadius = T * Cone;
+		const float Lod = min(log2(1.0 + ConeRadius / VoxelSize), 7.0);
+		const float Density = GetDensityLOD(InnerRadius, OuterRadius, SamplePos, Lod);
+
+		Transmittance *= exp(-Density * SigmaA * DT);
+		if (Transmittance < 0.01)
+		{
+			return 0.0;
+		}
+	}
+	return Transmittance;
+}
+
+void MarchCloudSegment(float3 RayOrigin, float3 RayDir, float2 Segment, float2 Noise, float3 SunDir, float Phase, float Mu,
+	inout float3 InScattering, inout float Transmittance, inout float DepthSum, inout float WeightSum)
+{
+	const float3 Center = PlanetCenterW();
+	const float InnerRadius = VWAtmosphere.GroundRadius + CLOUD_HEIGHT;
+	const float OuterRadius = InnerRadius + CLOUD_THICKNESS;
+	const float SegmentLength = Segment.y - Segment.x;
+	const float TargetStepLength = 250.0;
+	const uint MinStep = min(5u, VWCloud.MinSteps);
+	const uint MaxStep = max(VWCloud.MaxSteps, MinStep);
+
+	const uint StepCount = clamp(uint(ceil(SegmentLength / TargetStepLength)), MinStep, MaxStep);
+	const float StepSize = SegmentLength / StepCount;
+	const bool bLightViewLimit = (VWCloud.ModeFlags & 1) == 1;
+	const float IsotropicPhase = 1.0 / (4.0 * VW_PI);
+	const float SigmaA = 4.4 * 1e-6 * VWCloud.ExtinctionCoefficient;
+
+	float T = Segment.x;
+	for (uint i = 0; i < StepCount && T < Segment.y; ++i)
+	{
+		if (Transmittance <= 0.01)
+			break;
+
+		const float SampleT = T + StepSize * Noise.r;
+		const float3 SamplePos = RayOrigin + RayDir * SampleT;
+		const float Density = GetDensity(InnerRadius, OuterRadius, SamplePos);
+		T += StepSize;
+		if (Density <= 0.001)
+			continue;
+
+		// 태양 방향 자기 그림자
+		float LightViewT = 1.0;
+		float GroundNear, GroundFar;
+		if (RaySphereIntersect(SamplePos, -SunDir, Center, VWAtmosphere.GroundRadius, GroundNear, GroundFar))
+		{
+			LightViewT = 0.0;
+		}
+		else
+		{
+			float2 Seg0, Seg1;
+			const int SegCount = RayCloudShellIntersect(SamplePos, -SunDir, Center, InnerRadius, OuterRadius, Seg0, Seg1);
+			if (SegCount >= 1)
+			{
+				float Seg0Length = Seg0.y - Seg0.x;
+				Seg0Length = bLightViewLimit ? min(3000.0, Seg0Length) : Seg0Length;
+				const float3 Seg0Pos = SamplePos - SunDir * Seg0.x;
+				LightViewT *= CloudToSunTransmittance(Seg0Pos, Seg0Pos - SunDir * Seg0Length, Seg0Length, VWCloud.LightViewSteps, InnerRadius, OuterRadius);
+
+				if (SegCount == 2 && LightViewT > 0.01)
+				{
+					float Seg1Length = Seg1.y - Seg1.x;
+					Seg1Length = bLightViewLimit ? min(1000.0, Seg1Length) : Seg1Length;
+					const float3 Seg1Pos = SamplePos - SunDir * Seg1.x;
+					LightViewT *= CloudToSunTransmittance(Seg1Pos, Seg1Pos - SunDir * Seg1Length, Seg1Length, VWCloud.LightViewSteps, InnerRadius, OuterRadius);
+				}
+			}
+		}
+
+		const float3 SunTransmittance = SampleTransmittanceLUT(TransmittanceLUT, LinearClampSampler, SamplePos, -SunDir);
+		const float StepTransmittance = exp(-Density * SigmaA * StepSize);
+		const float StepAlpha = 1.0 - StepTransmittance;
+
+		const float DepthWeight = Transmittance * StepAlpha;
+		DepthSum += T * DepthWeight;
+		WeightSum += DepthWeight;
+
+		float LightingSource = LightViewT * Phase * VWAtmosphere.SunIlluminance;
+		LightingSource += 0.2 * pow(max(LightViewT, 1e-4), 0.3) * IsotropicPhase * VWAtmosphere.SunIlluminance; // 다중 산란 근사
+
+		const float HeightRatio = GetSampleHeightRatio(InnerRadius, OuterRadius, SamplePos);
+		const float VerticalP = VWCloud.Brightness * BezierCurve(HeightRatio);
+		const float DensityP = VWCloud.DensityPMin + pow(Density, VWCloud.DensityPFactor);
+		const float SeeSun = (Mu + 1.0) * 0.5;
+		const float Powder = lerp(DensityP, 1.0, lerp(0.0, 0.8, SeeSun));
+
+		InScattering += Transmittance * StepAlpha * Powder * (SunTransmittance * LightingSource * VerticalP);
+		Transmittance *= StepTransmittance;
+	}
+}
+
+int ClipCloudSegments(float MaxDistance, inout float2 Segment0, inout float2 Segment1, int SegmentCount)
+{
+	if (SegmentCount <= 0 || MaxDistance <= Segment0.x)
+	{
+		return 0;
+	}
+	Segment0.y = min(Segment0.y, MaxDistance);
+	if (Segment0.y <= Segment0.x)
+	{
+		return 0;
+	}
+	if (SegmentCount == 1 || MaxDistance <= Segment1.x)
+	{
+		return 1;
+	}
+	Segment1.y = min(Segment1.y, MaxDistance);
+	if (Segment1.y <= Segment1.x)
+	{
+		return 1;
+	}
+	return 2;
+}
+
+int LimitMarchLength(float MaxLength, inout float2 Segment0, inout float2 Segment1, int SegmentCount)
+{
+    if (SegmentCount <= 0)
+        return 0;
+    Segment0.y = min(Segment0.y, Segment0.x + MaxLength);
+    const float remain = MaxLength - (Segment0.y - Segment0.x);
+    if (SegmentCount == 1 || remain <= 0.0)
+        return 1;
+    Segment1.y = min(Segment1.y, Segment1.x + remain);
+    return 2;
+}
+
+[numthreads(16, 16, 1)]
+void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	const int2 BAYER_22[4] = { int2(0, 0), int2(1, 1), int2(1, 0), int2(0, 1) };
+	const int2 Pixel = int2(DispatchThreadId.xy) * 2 + BAYER_22[VWView.FrameIndex % 4];
+	if (any(Pixel >= OutSize))
+	{
+		return;
+	}
+	const float2 UV = (float2(Pixel) + 0.5) / float2(OutSize);
+
+	const float3 RayDir = GetRayDirW(UV);
+	const float3 CamPos = VWView.CamPosWorld;
+	const float3 Center = PlanetCenterW();
+	const float InnerRadius = VWAtmosphere.GroundRadius + CLOUD_HEIGHT;
+	const float OuterRadius = InnerRadius + CLOUD_THICKNESS;
+
+	uint NoiseW, NoiseH;
+	BlueNoiseTexture.GetDimensions(NoiseW, NoiseH);
+	const float2 BlueNoise = BlueNoiseTexture.Load(int3(uint2(Pixel) % uint2(max(NoiseW, 1u), max(NoiseH, 1u)), 0)).rg;
+	const float2 Noise = frac(BlueNoise + VWView.FrameIndex * 0.61803398875);
+
+	float2 Segment0, Segment1;
+	int SegmentCount = RayCloudShellIntersect(CamPos, RayDir, Center, InnerRadius, OuterRadius, Segment0, Segment1);
+	if (SegmentCount == 0)
+	{
+		OutCloud[Pixel] = float4(0.0, 0.0, 0.0, 1.0);
+		OutCloudDepth[Pixel] = -1.0;
+		return;
+	}
+
+	const float DeviceZ = SceneDepthTexture[ViewUVToScenePixel(UV)];
+	if (!IsSky(DeviceZ))
+	{
+		SegmentCount = ClipCloudSegments(GetSurfaceDistanceW(UV, DeviceZ), Segment0, Segment1, SegmentCount);
+	}
+    SegmentCount = LimitMarchLength(VWCloud.MaxMarchDistance, Segment0, Segment1, SegmentCount);
+	if (SegmentCount == 0)
+	{
+		OutCloud[Pixel] = float4(0.0, 0.0, 0.0, 1.0);
+		OutCloudDepth[Pixel] = -1.0;
+		return;
+	}
+
+	const float3 SunDir = VWAtmosphere.SunDir;
+	const float Mu = dot(RayDir, -SunDir);
+	const float Phase = lerp(MiePhase(Mu, 0.8), MiePhase(Mu, -0.2), 0.5);
+
+	float3 InScattering = 0.0;
+	float Transmittance = 1.0;
+	float DepthSum = 0.0;
+	float WeightSum = 0.0;
+	MarchCloudSegment(CamPos, RayDir, Segment0, Noise, SunDir, Phase, Mu, InScattering, Transmittance, DepthSum, WeightSum);
+	if (SegmentCount == 2)
+	{
+		MarchCloudSegment(CamPos, RayDir, Segment1, Noise, SunDir, Phase, Mu, InScattering, Transmittance, DepthSum, WeightSum);
+	}
+
+	// 얇은 구름은 가중 평균이 불안정하므로 구름층 시작 부근을 대신 사용
+	const float FallbackDepth = lerp(Segment0.x, Segment0.y, 0.3);
+	const float WeightedDepth = DepthSum / max(WeightSum, 1e-5);
+	const float DepthReliability = smoothstep(0.005, 0.05, WeightSum);
+
+	OutCloud[Pixel] = float4(InScattering * VWCloud.CloudColor.rgb, Transmittance);
+	OutCloudDepth[Pixel] = lerp(FallbackDepth, WeightedDepth, DepthReliability);
+}

@@ -2,6 +2,7 @@
 
 IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT(FVWViewUniformParams, "VWView");
 IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT(FVWAtmosphereUniformParams, "VWAtmosphere");
+IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT(FVWCloudUniformParameters, "VWCloud");
 
 IMPLEMENT_GLOBAL_SHADER(FVWHelloCS, "/Plugin/VW/Private/Hello.usf", "MainCS", SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FVWDebugViewCS, "/Plugin/VW/Private/VWDebugView.usf", "MainCS", SF_Compute);
@@ -12,3 +13,4 @@ IMPLEMENT_GLOBAL_SHADER(FVWCompositeCS, "/Plugin/VW/Private/Composite.usf", "Mai
 IMPLEMENT_GLOBAL_SHADER(FVWAerialPerspectiveLUTCS, "/Plugin/VW/Private/AerialPerspectiveLUT.usf", "MainCS", SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FVWDepthDownsampleCS, "/Plugin/VW/Private/DepthDownsample.usf", "MainCS", SF_Compute);
 IMPLEMENT_GLOBAL_SHADER(FVWAerialShadowCS, "/Plugin/VW/Private/AerialShadow.usf", "MainCS", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FVWCloudCS, "/Plugin/VW/Private/Cloud.usf", "MainCS", SF_Compute);

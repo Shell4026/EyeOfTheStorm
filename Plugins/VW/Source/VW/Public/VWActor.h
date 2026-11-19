@@ -77,6 +77,8 @@ private:
 	int32 LastMultiScatteringSteps = -1;
 	FVector LastSunDirUE = FVector::ZeroVector;
 
+	float CloudTimeHours = 0.f;
+
 	bool bDirty = false;
 	bool bHasPushed = false;
 	bool bShadowDirty = true;

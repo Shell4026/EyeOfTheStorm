@@ -6,6 +6,9 @@ Texture2D<float4> SkyViewLUT;
 Texture3D<float4> AerialPerspectiveLUT;
 Texture2D<float4> AerialShadowLUT;
 Texture2D<float> QuarterDepth;
+Texture2D<float4> CloudTexture;
+Texture2D<float> CloudDepthTexture;
+Texture2D<float> HalfDepth;
 
 SamplerState LinearClampSampler;
 SamplerState SkyViewSampler;
@@ -124,5 +127,25 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
     }
 
     float3 Result = Background;
+    if (Mode & 4)
+    {
+        const float InnerRadius = VWAtmosphere.GroundRadius + CLOUD_HEIGHT;
+        const float OuterRadius = InnerRadius + CLOUD_THICKNESS;
+        float2 Segment0, Segment1;
+        if (RayCloudShellIntersect(CamPos, RayDir, Center, InnerRadius, OuterRadius, Segment0, Segment1) >= 1)
+        {
+            const float4 Cloud = DepthAwareUpsample(CloudTexture, HalfDepth, UV, DeviceZ);
+            const float CloudDepth = max(CloudDepthTexture.SampleLevel(LinearClampSampler, UV, 0), 0.0);
+
+            float4 AtmosphereToCloud = float4(0.0, 0.0, 0.0, 1.0);
+            if (Mode & 1)
+            {
+                AtmosphereToCloud = AerialPerspectiveLUT.SampleLevel(LinearClampSampler, float3(UV, GetAerialPerspectiveZ(CloudDepth)), 0);
+            }
+			// 구름까지 대기의 산란 + (구름까지 대기의 투과율 * 구름의 산란) + 구름의 투과율 * (구름 뒤 배경)
+            Result = AtmosphereToCloud.rgb + AtmosphereToCloud.a * Cloud.rgb + Cloud.a * (Background - AtmosphereToCloud.rgb);
+        }
+    }
+    
     Output[Pixel] = float4(max(Result, 0.0), SceneColor.a);
 }

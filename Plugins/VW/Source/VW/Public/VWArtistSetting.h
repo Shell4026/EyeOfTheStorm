@@ -146,4 +146,7 @@ struct FVWQualityOptions
 
 	UPROPERTY(EditAnywhere, Category = "Cloud", meta = (ClampMin = "0", ClampMax = "5"))
 	float NeighborhoodGamma = 2.5f;
+	// 구름 레이마칭을 끊을 최대 거리 (m단위)
+	UPROPERTY(EditAnywhere, Category = "Cloud", meta = (ClampMin = "0"))
+	float CloudRayMarchMaxDistance = 50000.f;
 };
