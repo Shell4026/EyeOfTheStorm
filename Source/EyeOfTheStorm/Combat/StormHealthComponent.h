@@ -30,6 +30,8 @@ public:
 	float GetMaxHealth() const { return MaxHealth; }
 	UFUNCTION(BlueprintPure, Category = "Storm|Health")
 	float GetHealthRatio() const { return MaxHealth > 0.f ? Health / MaxHealth : 0.f; }
+	// 내림차순. BeginPlay 뒤에 채워진다
+	const TArray<float>& GetSortedThresholds() const { return SortedThresholds; }
 	UFUNCTION(BlueprintPure, Category = "Storm|Health")
 	bool IsDead() const { return Health <= 0.f; }
 protected:

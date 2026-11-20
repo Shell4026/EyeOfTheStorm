@@ -16,7 +16,7 @@ public:
 	// 위도, 자전축, 월, 시간 속도, 대기 두께는 쓰지 않는다. 장소에 딸린 값이라 레벨의 날씨 액터 값을 그대로 둔다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storm|Weather")
 	FVWArtistSetting Artist;
-	// 지금 날씨에서 이 프리셋으로 바뀌는 데 걸리는 시간. 0이면 바로 바뀐다
+	// TransitionTo로 이 프리셋으로 바꿀 때 걸리는 시간. 0이면 바로 바뀐다. 보스는 체력 비율 트랙을 써서 이 값을 쓰지 않는다
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storm|Weather", meta = (ClampMin = "0"))
 	float TransitionDuration = 5.f;
 
