@@ -11,9 +11,32 @@ DEFINE_LOG_CATEGORY_STATIC(LogStormWeather, Log, All);
 
 namespace
 {
-	FVector2D LerpVector2D(const FVector2D& A, const FVector2D& B, float Alpha)
+	// 플러그인이 커브를 셰이더로 보낼 때 쓰는 샘플 수와 같다. 같은 점에서 섞어야 셰이더가 받는 값이 정확히 섞인다
+	constexpr int32 CurveSamples = 32;
+
+	// 커브는 키 개수와 위치가 달라 키끼리 섞을 수 없다. 0에서 1까지 같은 간격으로 두 커브를 계산해 섞은 값을 직선 키로 넣는다
+	FRuntimeFloatCurve LerpCurve(const FRuntimeFloatCurve& From, const FRuntimeFloatCurve& To, float Alpha)
 	{
-		return FMath::Lerp(A, B, static_cast<double>(Alpha));
+		if (Alpha <= 0.f)
+		{
+			return From;
+		}
+		if (Alpha >= 1.f)
+		{
+			return To;
+		}
+
+		const FRichCurve* FromCurve = From.GetRichCurveConst();
+		const FRichCurve* ToCurve = To.GetRichCurveConst();
+		FRuntimeFloatCurve Out;
+		FRichCurve* OutCurve = Out.GetRichCurve();
+		for (int32 i = 0; i < CurveSamples; ++i)
+		{
+			const float X = static_cast<float>(i) / (CurveSamples - 1);
+			const FKeyHandle Key = OutCurve->AddKey(X, FMath::Lerp(FromCurve->Eval(X), ToCurve->Eval(X), Alpha));
+			OutCurve->SetKeyInterpMode(Key, RCIM_Linear);
+		}
+		return Out;
 	}
 
 	// 350도에서 10도로 갈 때 340도를 돌지 않고 20도만 돈다
@@ -131,10 +154,7 @@ FVWArtistSetting UStormWeatherSubsystem::LerpArtist(const FVWArtistSetting& From
 	Out.CloudDetail = FMath::Lerp(From.CloudDetail, To.CloudDetail, Alpha);
 	Out.CloudDensity = FMath::Lerp(From.CloudDensity, To.CloudDensity, Alpha);
 	Out.CloudBrightness = FMath::Lerp(From.CloudBrightness, To.CloudBrightness, Alpha);
-	Out.CloudBrightnessBezier.A = LerpVector2D(From.CloudBrightnessBezier.A, To.CloudBrightnessBezier.A, Alpha);
-	Out.CloudBrightnessBezier.B = LerpVector2D(From.CloudBrightnessBezier.B, To.CloudBrightnessBezier.B, Alpha);
-	Out.CloudBrightnessBezier.C = LerpVector2D(From.CloudBrightnessBezier.C, To.CloudBrightnessBezier.C, Alpha);
-	Out.CloudBrightnessBezier.D = LerpVector2D(From.CloudBrightnessBezier.D, To.CloudBrightnessBezier.D, Alpha);
+	Out.CloudBrightnessCurve = LerpCurve(From.CloudBrightnessCurve, To.CloudBrightnessCurve, Alpha);
 	Out.CloudSoftness = FMath::Lerp(From.CloudSoftness, To.CloudSoftness, Alpha);
 
 	Out.WindDirectionDegrees = LerpAngleDegrees(From.WindDirectionDegrees, To.WindDirectionDegrees, Alpha);
