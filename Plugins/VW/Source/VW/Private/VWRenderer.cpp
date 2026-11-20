@@ -249,8 +249,9 @@ FVWCommonParams FVWRenderer::CreateCommonParams(const FSceneView& View, const FI
 	CloudUB.Brightness = C.Brightness;
 	CloudUB.DensityPMin = C.DensityPMin;
 	CloudUB.MaxMarchDistance = C.MaxMarchDistance;
-	CloudUB.BezierAB = FVector4f(C.BezierA.X, C.BezierA.Y, C.BezierB.X, C.BezierB.Y);
-	CloudUB.BezierCD = FVector4f(C.BezierC.X, C.BezierC.Y, C.BezierD.X, C.BezierD.Y);
+	int i = 0;
+	for (const FVector4f& Curve : C.BrightnessCurve)
+		CloudUB.BrightnessCurve[i++] = Curve;
 	CloudUB.WindVelKmh = C.WindVelKmh;
 	CloudUB.DensityPFactor = C.DensityPFactor;
 	CloudUB.CloudColor = FVector4f(C.CloudColor.R, C.CloudColor.G, C.CloudColor.B, C.CloudColor.A);

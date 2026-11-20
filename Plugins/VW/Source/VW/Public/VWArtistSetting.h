@@ -1,30 +1,21 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Curves/CurveFloat.h"
 #include "VWArtistSetting.generated.h"
-
-USTRUCT(BlueprintType)
-struct FVWBezier
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bezier")
-	FVector2D A = FVector2D(0.0, 0.0);
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bezier")
-	FVector2D B = FVector2D(0.2, 0.5);
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bezier")
-	FVector2D C = FVector2D(0.8, 0.5);
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bezier")
-	FVector2D D = FVector2D(1.0, 1.0);
-};
 
 USTRUCT(BlueprintType)
 struct FVWArtistSetting
 {
 	GENERATED_BODY()
+
+	FVWArtistSetting()
+	{
+		FRichCurve* Curve = CloudBrightnessCurve.GetRichCurve();
+		Curve->AddKey(0.f, 0.f);
+		Curve->AddKey(0.5f, 0.5f);
+		Curve->AddKey(1.f, 1.f);
+	}
 
 	// 태양
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sun", meta = (DisplayName = "밝기", ClampMin = "0", UIMax = "4"))
@@ -83,8 +74,9 @@ struct FVWArtistSetting
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cloud", meta = (DisplayName = "구름 밝기", ClampMin = "0", ClampMax = "4"))
 	float CloudBrightness = 1.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cloud", meta = (DisplayName = "높이별 밝기 커브"))
-	FVWBezier CloudBrightnessBezier;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cloud", 
+		meta = (DisplayName = "높이별 밝기 커브", XAxisName = "높이 비율", YAxisName = "밝기", ViewMinInput = "0", ViewMaxInput = "1", ViewMinOutput = "0", ViewMaxOutput = "1"))
+	FRuntimeFloatCurve CloudBrightnessCurve;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cloud", meta = (DisplayName = "파우더 효과", ClampMin = "0", ClampMax = "1"))
 	float CloudSoftness = 0.5f;

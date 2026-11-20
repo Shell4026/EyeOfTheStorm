@@ -42,10 +42,8 @@ struct FVWCloudSettings
 	float DensityPFactor = 1.25f;
 	float MaxMarchDistance = 50'000.f;
 
-	FVector2f BezierA{ 0.f, 0.f };
-	FVector2f BezierB{ 0.2f, 0.5f };
-	FVector2f BezierC{ 0.8f, 0.5f };
-	FVector2f BezierD{ 1.f, 1.f };
+	static constexpr int CloudCurveSamples = 32;
+	FVector4f BrightnessCurve[CloudCurveSamples / 4];
 
 	FVector2f WindVelKmh{ 1.f, 0.f };
 	FLinearColor CloudColor = FLinearColor::White;

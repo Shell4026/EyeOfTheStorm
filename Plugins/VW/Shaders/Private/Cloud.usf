@@ -15,29 +15,28 @@ float Remap(float Value, float OriginalMin, float OriginalMax, float NewMin, flo
 	return NewMin + ((Value - OriginalMin) / (OriginalMax - OriginalMin)) * (NewMax - NewMin);
 }
 
-float BezierCurve(float T)
-{
-	const float2 A = VWCloud.BezierAB.xy;
-	const float2 B = VWCloud.BezierAB.zw;
-	const float2 C = VWCloud.BezierCD.xy;
-	const float2 D = VWCloud.BezierCD.zw;
-	const float2 Mid = (B + C) * 0.5;
-	if (T < 0.5)
-	{
-		const float S = T * 2.0;
-		const float U = 1.0 - S;
-		return (U * U * A + 2.0 * U * S * B + S * S * Mid).y;
-	}
-	const float S = (T - 0.5) * 2.0;
-	const float U = 1.0 - S;
-	return (U * U * Mid + 2.0 * U * S * C + S * S * D).y;
-}
-
 float2 GetCloudVelocity()
 {
 	const float2 Vel = VWCloud.WindVelKmh * 1000.0;	// km/h -> m/h
 	const float VoxelSize = 1.0 / VWCloud.Tiling;
 	return Vel * VoxelSize * VWCloud.Time;
+}
+
+float CurveSample(uint X)
+{
+	// X >> 2 == X / 4
+	// & 3 == X % 4
+    return VWCloud.BrightnessCurve[X >> 2][X & 3];
+}
+
+float CloudBrightness(float HeightRatio)
+{
+    const float X = saturate(HeightRatio) * 31.0; // 0 ~ 31
+    const uint Start = (uint) X;
+    const uint End = min(Start + 1, 31u);
+	
+    return lerp(CurveSample(Start), CurveSample(End), frac(X));
+
 }
 
 float GetSampleHeightRatio(float InnerRadius, float OuterRadius, float3 SamplePos)
@@ -190,7 +189,7 @@ void MarchCloudSegment(float3 RayOrigin, float3 RayDir, float2 Segment, float2 N
 		LightingSource += 0.2 * pow(max(LightViewT, 1e-4), 0.3) * IsotropicPhase * VWAtmosphere.SunIlluminance; // 다중 산란 근사
 
 		const float HeightRatio = GetSampleHeightRatio(InnerRadius, OuterRadius, SamplePos);
-		const float VerticalP = VWCloud.Brightness * BezierCurve(HeightRatio);
+		const float VerticalP = VWCloud.Brightness * CloudBrightness(HeightRatio);
 		const float DensityP = VWCloud.DensityPMin + pow(Density, VWCloud.DensityPFactor);
 		const float SeeSun = (Mu + 1.0) * 0.5;
 		const float Powder = lerp(DensityP, 1.0, lerp(0.0, 0.8, SeeSun));

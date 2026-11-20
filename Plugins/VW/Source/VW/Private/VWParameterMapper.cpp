@@ -40,11 +40,12 @@ FVWCloudSettings VWParameterMapper::ConvertCloudSetting(const FVWArtistSetting& 
 	Result.AnvilBias = FMath::Lerp(0.2f, 0.8f, (Artist.CloudVerticalAmount + 1.f) / 2.f); // -1~1 -> 0.2~0.8
 	Result.Brightness = FMath::Clamp(Artist.CloudBrightness, 0.f, 4.f);
 
-	const FVWBezier& Bezier = Artist.CloudBrightnessBezier;
-	Result.BezierA = FVector2f(Bezier.A);
-	Result.BezierB = FVector2f(Bezier.B);
-	Result.BezierC = FVector2f(Bezier.C);
-	Result.BezierD = FVector2f(Bezier.D);
+	const FRichCurve* Curve = Artist.CloudBrightnessCurve.GetRichCurveConst();
+	for (int i = 0; i < FVWCloudSettings::CloudCurveSamples; ++i)
+	{
+		const float X = i / static_cast<float>(FVWCloudSettings::CloudCurveSamples - 1);
+		Result.BrightnessCurve[i / 4][i % 4] = Curve->Eval(X);
+	}
 
 	Result.DensityPMin = FMath::Lerp(0.f, 0.2f, Artist.CloudSoftness);
 	Result.DensityPFactor = FMath::Lerp(0.f, 1.5f, Artist.CloudSoftness);
