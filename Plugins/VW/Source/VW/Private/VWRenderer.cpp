@@ -2,6 +2,7 @@
 #include "VWShaders.h"
 
 #include "HAL/IConsoleManager.h"
+#include "ProfilingDebugging/RealtimeGPUProfiler.h"
 #include "GlobalShader.h"
 #include "RenderGraphBuilder.h"
 #include "RenderGraphUtils.h"
@@ -14,6 +15,8 @@ static TAutoConsoleVariable<int32> CVarVWDebugView(
 	TEXT("r.VW.DebugView"), 0, TEXT("1 = 광선 방향, 2 = 표면 거리, 3 = 태양 원반"), EConsoleVariableFlags::ECVF_RenderThreadSafe);
 static TAutoConsoleVariable<int32> CVarVWEnable(
 	TEXT("r.VW.Enable"), 1, TEXT("VolumetricWeather 렌더링 사용 여부"), EConsoleVariableFlags::ECVF_RenderThreadSafe);
+
+DECLARE_GPU_STAT(VW);
 
 namespace
 {
@@ -132,7 +135,8 @@ void FVWRenderer::Render(FRDGBuilder& GraphBuilder, const FSceneView& View, cons
 	if (ViewSize.X <= 0 || ViewSize.Y <= 0 || Inputs.SceneColor == nullptr || Inputs.SceneDepth == nullptr)
 		return;
 
-	RDG_EVENT_SCOPE(GraphBuilder, "VW");
+	RDG_EVENT_SCOPE_STAT(GraphBuilder, VW, "VW");
+	RDG_GPU_STAT_SCOPE(GraphBuilder, VW);
 	FGlobalShaderMap* ShaderMap = GetGlobalShaderMap(View.GetFeatureLevel());
 	if (CVarVWHello.GetValueOnRenderThread() != 0)
 	{
@@ -352,6 +356,8 @@ void FVWRenderer::RenderStaticLUTs(FRDGBuilder& GraphBuilder, FGlobalShaderMap* 
 
 FRDGTextureRef FVWRenderer::RenderSkyViewLUT(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, FRDGTextureRef Transmittance, FRDGTextureRef MultiScattering)
 {
+	RDG_EVENT_SCOPE(GraphBuilder, "VW.SkyViewLUT");
+
 	FRDGTextureRef SkyView = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
 		SkyViewLUTSize, EPixelFormat::PF_FloatRGBA, FClearValueBinding::None, UAVTextureFlags), TEXT("VW.SkyViewLUT"));
 
@@ -372,6 +378,7 @@ void FVWRenderer::RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* S
 	FRDGTextureRef SkyView, FRDGTextureRef AerialPerspective, FRDGTextureRef AerialShadow, FRDGTextureRef QuarterDepth,
 	FRDGTextureRef CloudTex, FRDGTextureRef CloudDpethTex, FRDGTextureRef HalfDepth)
 {
+	RDG_EVENT_SCOPE(GraphBuilder, "VW.Composite");
 	const FIntPoint ViewSize = Inputs.ViewRect.Size();
 	FRDGTextureRef Output = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(
 		Inputs.SceneColor->Desc.Extent, Inputs.SceneColor->Desc.Format, FClearValueBinding::Black, UAVTextureFlags), TEXT("VW.Composite"));
@@ -400,6 +407,7 @@ void FVWRenderer::RenderComposite(FRDGBuilder& GraphBuilder, FGlobalShaderMap* S
 
 FRDGTextureRef FVWRenderer::RenderAerialPerspective(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef Transmittance, FRDGTextureRef MultiScattering)
 {
+	RDG_EVENT_SCOPE(GraphBuilder, "VW.AerialPerspectiveLUT");
 	FRDGTextureRef Output = GraphBuilder.CreateTexture(
 		FRDGTextureDesc::Create3D(FIntVector(AerialPerspectiveLUTSize), EPixelFormat::PF_FloatRGBA, FClearValueBinding::Black, UAVTextureFlags), TEXT("VW.AerialPerspective"));
 
@@ -435,6 +443,7 @@ FRDGTextureRef FVWRenderer::RenderLowResDepth(FRDGBuilder& GraphBuilder, FGlobal
 
 FRDGTextureRef FVWRenderer::RenderAerialShadow(FRDGBuilder& GraphBuilder, FGlobalShaderMap* ShaderMap, const FVWCommonParams& Common, const FViewInputs& Inputs, FRDGTextureRef AerialPerspective, FRDGTextureRef BlueNoiseTexture)
 {
+	RDG_EVENT_SCOPE(GraphBuilder, "VW.AerialShadow");
 	const FIntPoint OutSize = FIntPoint::DivideAndRoundUp(Inputs.ViewRect.Size(), 4); // 1/4로 렌더링
 	FRDGTextureRef AerialShadow = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(OutSize, EPixelFormat::PF_FloatRGBA, FClearValueBinding::None, UAVTextureFlags), TEXT("VW.AerialShadow"));
 
