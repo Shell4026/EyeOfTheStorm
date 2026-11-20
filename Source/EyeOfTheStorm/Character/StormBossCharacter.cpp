@@ -8,8 +8,6 @@
 #include "Character/StormPlayerCharacter.h"
 #include "Combat/StormHealthComponent.h"
 #include "Combat/StormMeleeComponent.h"
-#include "Weather/StormWeatherPreset.h"
-#include "Weather/StormWeatherSubsystem.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -203,9 +201,7 @@ void AStormBossCharacter::BeginPlay()
 
 	PatternReadyTimes.SetNumZeroed(Patterns.Num());
 	HealthComponent->OnThresholdCrossed.AddDynamic(this, &AStormBossCharacter::HandleThresholdCrossed);
-	HealthComponent->OnHealthChanged.AddDynamic(this, &AStormBossCharacter::HandleHealthChanged);
 	UpdateRotationMode();
-	StartWeatherTrack();
 }
 
 void AStormBossCharacter::HandleDeath(AActor* Killer)
@@ -257,14 +253,6 @@ void AStormBossCharacter::HandleThresholdCrossed(float Threshold)
 	OnPhaseChanged.Broadcast(Phase);
 }
 
-void AStormBossCharacter::HandleHealthChanged(float NewHealth, float MaxHealth)
-{
-	if (UStormWeatherSubsystem* Weather = GetWorld()->GetSubsystem<UStormWeatherSubsystem>())
-	{
-		Weather->SetTrackTarget(MaxHealth > 0.f ? NewHealth / MaxHealth : 0.f);
-	}
-}
-
 void AStormBossCharacter::UpdateRotationMode()
 {
 	UCharacterMovementComponent* Movement = GetCharacterMovement();
@@ -283,35 +271,6 @@ UAnimMontage* AStormBossCharacter::PickPatternMontage(int32 Index) const
 		}
 	}
 	return Candidates.Num() > 0 ? Candidates[FMath::RandRange(0, Candidates.Num() - 1)] : nullptr;
-}
-
-void AStormBossCharacter::StartWeatherTrack()
-{
-	UStormWeatherSubsystem* Weather = GetWorld()->GetSubsystem<UStormWeatherSubsystem>();
-	if (!Weather)
-	{
-		return;
-	}
-
-	const TArray<float>& Thresholds = HealthComponent->GetSortedThresholds();
-	TArray<FStormWeatherKey> Keys;
-	for (int32 i = 0; i < Phases.Num(); ++i)
-	{
-		if (!Phases[i].Weather)
-		{
-			continue;
-		}
-		float Ratio = Phases[i].WeatherHealthRatio;
-		if (Ratio < 0.f)
-		{
-			// 페이즈 i는 높은 쪽에서 i번째 경계를 넘을 때 시작한다
-			Ratio = i == 0 ? 1.f : (Thresholds.IsValidIndex(i - 1) ? Thresholds[i - 1] : 0.f);
-		}
-		FStormWeatherKey& Key = Keys.AddDefaulted_GetRef();
-		Key.Position = Ratio;
-		Key.Preset = Phases[i].Weather;
-	}
-	Weather->StartTrack(Keys, HealthComponent->GetHealthRatio(), WeatherFollowRate);
 }
 
 const FStormBossPhase& AStormBossCharacter::GetPhaseSettings() const

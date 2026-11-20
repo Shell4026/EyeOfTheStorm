@@ -30,12 +30,16 @@ public:
 	float GetMaxHealth() const { return MaxHealth; }
 	UFUNCTION(BlueprintPure, Category = "Storm|Health")
 	float GetHealthRatio() const { return MaxHealth > 0.f ? Health / MaxHealth : 0.f; }
-	// 내림차순. BeginPlay 뒤에 채워진다
+	// 내림차순
 	const TArray<float>& GetSortedThresholds() const { return SortedThresholds; }
 	UFUNCTION(BlueprintPure, Category = "Storm|Health")
 	bool IsDead() const { return Health <= 0.f; }
 protected:
+	virtual void OnRegister() override;
 	virtual void BeginPlay() override;
+private:
+	// 최대 체력과 정렬한 경계로 되돌린다. 이벤트는 부르지 않는다
+	void ResetState();
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Storm|Health")
 	FStormHealthChangedSignature OnHealthChanged;

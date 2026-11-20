@@ -6,7 +6,6 @@
 
 class UBehaviorTree;
 class UStormMeleeComponent;
-class UStormWeatherPreset;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FStormBossPhaseChangedSignature, int32, NewPhase);
 DECLARE_MULTICAST_DELEGATE_OneParam(FStormBossAttackEndedSignature, bool);
@@ -43,12 +42,6 @@ struct EYEOFTHESTORM_API FStormBossPhase
 	float PlayRate = 1.f;
 	UPROPERTY(EditAnywhere, Category = "Storm|Boss", meta = (ClampMin = "0"))
 	float CooldownScale = 1.f;
-	// 보스 체력 비율이 WeatherHealthRatio일 때의 날씨. 두 페이즈의 비율 사이에서는 두 날씨를 섞는다. 비우면 이 페이즈는 날씨 기준점에서 빠진다
-	UPROPERTY(EditAnywhere, Category = "Storm|Boss")
-	TObjectPtr<UStormWeatherPreset> Weather;
-	// 날씨가 이 페이즈의 날씨로 완성되는 체력 비율. 음수면 이 페이즈가 시작되는 체력 비율 (첫 페이즈는 1)
-	UPROPERTY(EditAnywhere, Category = "Storm|Boss", meta = (UIMin = "-1", UIMax = "1"))
-	float WeatherHealthRatio = -1.f;
 };
 
 UCLASS()
@@ -85,14 +78,10 @@ private:
 	void HandlePatternMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
 	UFUNCTION()
 	void HandleThresholdCrossed(float Threshold);
-	UFUNCTION()
-	void HandleHealthChanged(float NewHealth, float MaxHealth);
 	// 공격 중에는 시작할 때 정한 방향을 유지하고, 아니면 AI 컨트롤러의 포커스(대상)를 본다.
 	void UpdateRotationMode();
 	// 패턴의 Montages 중 비어 있지 않은 것 하나를 무작위로 고른다. 없으면 nullptr
 	UAnimMontage* PickPatternMontage(int32 Index) const;
-	// 페이즈마다 날씨 기준점을 만들어 날씨 서브시스템의 트랙을 시작한다. 그다음부터 날씨는 체력 비율을 따라간다
-	void StartWeatherTrack();
 
 	const FStormBossPhase& GetPhaseSettings() const;
 	bool IsPatternAvailable(int32 Index, float Distance, float Now) const;
@@ -119,9 +108,6 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Boss")
 	TArray<FStormBossPhase> Phases;
-	// 날씨가 체력 비율을 따라가는 속도 (초당 체력 비율). 0.05면 체력 10%가 한 번에 깎여도 날씨는 2초에 걸쳐 따라간다. 0이면 바로 따라간다
-	UPROPERTY(EditDefaultsOnly, Category = "Storm|Boss", meta = (ClampMin = "0"))
-	float WeatherFollowRate = 0.05f;
 
 	// UI
 
