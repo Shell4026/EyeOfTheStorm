@@ -103,7 +103,7 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
 
 	const float4 CurCloud = CurCloudTexture.Load(int3(Pixel, 0));
 	const float CurDepth = CurCloudDepthTexture.Load(int3(Pixel, 0));
-    const bool bOccluded = bCurrentFramePixel && IsCloudOccluded(CurDepth);
+    const bool bOccluded = IsCloudOccluded(CurDepth);
 	
     if (bCurrentFramePixel && !bOccluded && CurDepth < 0.0) // 구름층을 지나지 않는 픽셀
 	{
@@ -133,19 +133,26 @@ void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
 	}
 
 	float4 PrevCloud = PrevCloudTexture.SampleLevel(LinearClampSampler, HistoryUV, 0);
+    if (!bCurrentFramePixel) // 이번 프레임에 계산하지 않은 픽셀
+    {
+        if (Accum == 0)
+        {
+            const int2 Fresh = min((Pixel & ~1) + BAYER_22[VWView.FrameIndex % 4], Size - 1);
+            if (IsCloudOccluded(CurCloudDepthTexture.Load(int3(Fresh, 0))))
+                PrevCloud = ClampToNeighborhood(PrevCloud, Pixel, Size);
+            else
+                PrevCloud = CurCloudTexture.Load(int3(Fresh, 0));
+        }
+        OutCloud[Pixel] = PrevCloud;
+        return;
+    }
+	
     if (bOccluded) // 가려져서 계산을 건너뛴 픽셀은 물체 뒤 구름을 히스토리로 유지
     {
         AccumTexture[Pixel] = 0;
         OutCloud[Pixel] = ClampToNeighborhood(PrevCloud, Pixel, Size);
         return;
     }
-	if (!bCurrentFramePixel) // 이번 프레임에 계산하지 않은 픽셀은 재투영 결과를 그대로
-	{
-        if (Accum == 0)
-            PrevCloud = FallbackCloud(Pixel, Size);
-		OutCloud[Pixel] = PrevCloud;
-		return;
-	}
 
 	const float Weight = min(Accum / float(Accum + 1), MaxHistoryWeight);
     Accum = min(Accum + 1, 16u);
