@@ -28,6 +28,8 @@ public:
 	virtual AActor* GetAttackTarget() const override;
 	virtual bool IsAttacking() const override { return bIsAttacking; }
 	virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
+	// 월드 KillZ 아래로 떨어졌을 때. 기본 동작은 액터를 없애서 HUD와 카메라가 끊기므로, 죽이고 그 자리에 멈춰 둔다
+	virtual void FellOutOfWorld(const class UDamageType& DamageType) override;
 
 	// 공격 몽타주의 Storm Combo Window 노티파이가 부른다. 열리는 순간 기억해 둔 회피나 다음 타를 실행하고,
 	// 이때부터 공격이 끝날 때까지 회피로 끊을 수 있다.
@@ -83,6 +85,13 @@ private:
 	void UpdateRotationMode();
 
 	void ApplyDefaultMorphTargets();
+
+	// 낭떠러지로 떨어져 FallDeathDepth를 넘으면 즉사시키고, 그다음에는 카메라가 떨어지는 캐릭터를 내려다보게 한다. Tick에서 부른다
+	void UpdateFallDeath(float DeltaSeconds);
+	// 회피 무적이어도 죽는다
+	void FallToDeath();
+	// 떨어진 캐릭터를 멈추고 숨긴다. 끝없이 떨어지며 카메라가 따라 돌지 않게 한다
+	void StopFallenBody();
 
 	UFUNCTION()
 	void HandleLockOnTargetChanged(AStormCharacterBase* NewTarget);
@@ -189,6 +198,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|Camera", meta = (ClampMin = "0"))
 	float ZoomInterpSpeed = 10.f;
 	
+	// 낙사
+
+	// 마지막으로 서 있던 바닥보다 이만큼 아래로 떨어지면 즉사한다
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|FallDeath", meta = (ClampMin = "0"))
+	float FallDeathDepth = 600.f;
+	// 낙사한 뒤 바닥보다 이만큼 아래에서 캐릭터를 멈추고 숨긴다
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|FallDeath", meta = (ClampMin = "0"))
+	float FallDeathStopDepth = 3000.f;
+	// 낙사한 뒤 카메라가 떨어지는 캐릭터 쪽으로 도는 속도
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|FallDeath", meta = (ClampMin = "0"))
+	float FallDeathCameraInterpSpeed = 3.f;
+
 	// 외형
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storm|Appearance")
@@ -223,6 +244,10 @@ private:
 	int32 ComboIndex = 0;
 	// 지금 재생 중인 공격 몽타주. 이전 타의 블렌드 아웃 알림과 구별한다.
 	TObjectPtr<UAnimMontage> ActiveAttackMontage;
+
+	// 마지막으로 바닥에 서 있던 높이
+	float LastGroundZ = 0.f;
+	bool bFellToDeath = false;
 
 	FTimerHandle DodgeEndTimer;
 	FTimerHandle DodgeForceEndTimer;

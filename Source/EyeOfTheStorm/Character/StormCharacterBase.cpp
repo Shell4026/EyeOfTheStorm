@@ -120,7 +120,13 @@ void AStormCharacterBase::BeginPlay()
 void AStormCharacterBase::HandleDeath(AActor* Killer)
 {
 	EndAttackLunge();
-	GetCharacterMovement()->DisableMovement();
+	// 공중에서 죽으면(낙사) 그대로 떨어지게 둔다. 이동을 끄면 공중에 멈추고, 사망 몽타주도 서서 쓰러지는 동작이라 틀지 않는다
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (Movement->IsFalling())
+	{
+		return;
+	}
+	Movement->DisableMovement();
 	if (DeathMontage)
 	{
 		PlayAnimMontage(DeathMontage);

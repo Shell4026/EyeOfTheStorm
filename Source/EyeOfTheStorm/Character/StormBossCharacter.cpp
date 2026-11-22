@@ -26,6 +26,8 @@ AStormBossCharacter::AStormBossCharacter()
 	Movement->bUseControllerDesiredRotation = true;
 	Movement->RotationRate = FRotator(0.f, 240.f, 0.f);
 	Movement->MaxWalkSpeed = 350.f;
+	// 낭떠러지 아레나에서 돌진(공격 전진)이 빗나가도 가장자리에서 멈춘다
+	Movement->bCanWalkOffLedges = false;
 
 	Melee = CreateDefaultSubobject<UStormMeleeComponent>(TEXT("Melee"));
 

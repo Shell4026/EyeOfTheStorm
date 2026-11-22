@@ -4,6 +4,7 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Camera/CameraComponent.h"
+#include "Combat/StormHealthComponent.h"
 #include "Combat/StormLockOnComponent.h"
 #include "Combat/StormMeleeComponent.h"
 
@@ -136,6 +137,12 @@ float AStormPlayerCharacter::TakeDamage(float DamageAmount, FDamageEvent const& 
 	return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 }
 
+void AStormPlayerCharacter::FellOutOfWorld(const UDamageType& DamageType)
+{
+	FallToDeath();
+	StopFallenBody();
+}
+
 void AStormPlayerCharacter::OpenComboWindow()
 {
 	if (!bIsAttacking)
@@ -184,6 +191,8 @@ void AStormPlayerCharacter::BeginPlay()
 	ApplyDefaultMorphTargets();
 
 	TargetZoomDistance = CameraBoom->TargetArmLength;
+	// 처음 바닥에 닿기 전에는 낙사하지 않는다. 공중에서 시작해도(Play From Here 등) 떨어지자마자 죽지 않게 한다
+	LastGroundZ = TNumericLimits<float>::Lowest();
 
 	UpdateRotationMode();
 	CreateHUD();
@@ -208,6 +217,8 @@ void AStormPlayerCharacter::Tick(float DeltaSeconds)
 	Movement->MaxWalkSpeed = FMath::FInterpConstantTo(Movement->MaxWalkSpeed, Target, DeltaSeconds, SpeedChangeRate);
 
 	CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetZoomDistance, DeltaSeconds, ZoomInterpSpeed);
+
+	UpdateFallDeath(DeltaSeconds);
 }
 
 void AStormPlayerCharacter::HandleDeath(AActor* Killer)
@@ -614,6 +625,62 @@ void AStormPlayerCharacter::ApplyDefaultMorphTargets()
 	{
 		MeshComp->SetMorphTarget(Morph.Key, Morph.Value);
 	}
+}
+
+void AStormPlayerCharacter::UpdateFallDeath(float DeltaSeconds)
+{
+	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!bFellToDeath)
+	{
+		if (Movement->IsMovingOnGround())
+		{
+			LastGroundZ = GetActorLocation().Z;
+		}
+		else if (!IsDead() && Movement->IsFalling() && LastGroundZ - GetActorLocation().Z > FallDeathDepth)
+		{
+			FallToDeath();
+		}
+		return;
+	}
+
+	if (Movement->MovementMode == MOVE_None)
+	{
+		return;
+	}
+	// 카메라 붐은 떨어진 자리에 멈춰 있으니, 컨트롤 회전을 캐릭터 쪽으로 돌려 내려다보게 한다
+	if (APlayerController* PC = Cast<APlayerController>(Controller))
+	{
+		const FRotator LookAt = (GetActorLocation() - CameraBoom->GetComponentLocation()).Rotation();
+		PC->SetControlRotation(FMath::RInterpTo(PC->GetControlRotation(), LookAt, DeltaSeconds, FallDeathCameraInterpSpeed));
+	}
+	if (LastGroundZ - GetActorLocation().Z > FallDeathStopDepth)
+	{
+		StopFallenBody();
+	}
+}
+
+void AStormPlayerCharacter::FallToDeath()
+{
+	if (bFellToDeath || IsDead())
+	{
+		return;
+	}
+	bFellToDeath = true;
+
+	// 카메라 붐을 지금 월드 위치에 고정한다. 캐릭터만 아래로 떨어진다
+	const FVector BoomLocation = CameraBoom->GetComponentLocation();
+	CameraBoom->SetUsingAbsoluteLocation(true);
+	CameraBoom->SetWorldLocation(BoomLocation);
+	CameraBoom->bEnableCameraLag = false;
+
+	// TakeDamage를 거치지 않아야 회피 무적과 무적 치트를 무시한다
+	HealthComponent->ApplyDamage(HealthComponent->GetHealth(), nullptr);
+}
+
+void AStormPlayerCharacter::StopFallenBody()
+{
+	GetCharacterMovement()->DisableMovement();
+	SetActorHiddenInGame(true);
 }
 
 void AStormPlayerCharacter::HandleLockOnTargetChanged(AStormCharacterBase* NewTarget)
