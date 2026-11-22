@@ -164,8 +164,15 @@ void UStormWeatherSubsystem::ApplyBlend(float Alpha)
 		Actor->SetArtist(LerpArtist(FromArtist, TargetPreset->Artist, Alpha));
 	}
 
+	// 안개 없는 프리셋으로 갈 때는 색과 높이 값을 지금 값으로 두고 밀도만 줄인다. 걷히는 동안 안개 색이 기본값 쪽으로 바뀌지 않게 한다 (ApplyBetween과 같은 처리)
+	FStormFogState ToFog = GetFogState(TargetPreset);
+	if (ToFog.Density <= 0.f)
+	{
+		ToFog = FromFog;
+		ToFog.Density = 0.f;
+	}
 	// 안개 액터는 TransitionTo에서 필요하면 이미 만들었다
-	ApplyFog(LerpFog(FromFog, GetFogState(TargetPreset), Alpha), false);
+	ApplyFog(LerpFog(FromFog, ToFog, Alpha), false);
 }
 
 void UStormWeatherSubsystem::ApplyTrack()

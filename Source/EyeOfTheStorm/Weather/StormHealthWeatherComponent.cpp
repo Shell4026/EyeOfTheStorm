@@ -2,6 +2,7 @@
 
 #include "Combat/StormHealthComponent.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 #include "Weather/StormWeatherPreset.h"
 #include "Weather/StormWeatherSubsystem.h"
 
@@ -24,6 +25,7 @@ void UStormHealthWeatherComponent::BeginPlay()
 	}
 	HealthComponent = Health;
 	Health->OnHealthChanged.AddDynamic(this, &UStormHealthWeatherComponent::HandleHealthChanged);
+	Health->OnDeath.AddDynamic(this, &UStormHealthWeatherComponent::HandleDeath);
 	StartTrack();
 }
 
@@ -62,4 +64,25 @@ void UStormHealthWeatherComponent::HandleHealthChanged(float NewHealth, float Ma
 	{
 		Weather->SetTrackTarget(MaxHealth > 0.f ? NewHealth / MaxHealth : 0.f);
 	}
+}
+
+void UStormHealthWeatherComponent::HandleDeath(AActor* Killer)
+{
+	if (RestoreDelay < 0.f)
+	{
+		return;
+	}
+	GetWorld()->GetTimerManager().SetTimer(RestoreTimer, this, &UStormHealthWeatherComponent::RestoreWeather, FMath::Max(RestoreDelay, 0.01f), false);
+}
+
+void UStormHealthWeatherComponent::RestoreWeather()
+{
+	UStormWeatherSubsystem* Weather = GetWorld()->GetSubsystem<UStormWeatherSubsystem>();
+	const FStormHealthWeatherKey* First = Keys.FindByPredicate([](const FStormHealthWeatherKey& Key) { return Key.Preset != nullptr; });
+	if (!Weather || !First)
+	{
+		return;
+	}
+	UE_LOG(LogStormHealthWeather, Log, TEXT("%s 사망, 날씨를 %s로 되돌린다"), *GetOwner()->GetName(), *First->Preset->GetName());
+	Weather->TransitionTo(First->Preset);
 }
