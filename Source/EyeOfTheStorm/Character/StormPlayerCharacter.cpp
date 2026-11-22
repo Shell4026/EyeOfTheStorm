@@ -7,6 +7,7 @@
 #include "Combat/StormHealthComponent.h"
 #include "Combat/StormLockOnComponent.h"
 #include "Combat/StormMeleeComponent.h"
+#include "Core/StormGameMode.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -234,6 +235,11 @@ void AStormPlayerCharacter::HandleDeath(AActor* Killer)
 		DisableInput(PC);
 	}
 	Super::HandleDeath(Killer);
+
+	if (AStormGameMode* GameMode = GetWorld()->GetAuthGameMode<AStormGameMode>())
+	{
+		GameMode->HandlePlayerDeath(this);
+	}
 }
 
 void AStormPlayerCharacter::CreateHUD()
