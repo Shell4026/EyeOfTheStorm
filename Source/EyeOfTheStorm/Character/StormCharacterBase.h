@@ -6,6 +6,7 @@
 
 class UStormHealthComponent;
 class UAnimMontage;
+class UMaterialInterface;
 
 UCLASS(Abstract)
 class EYEOFTHESTORM_API AStormCharacterBase : public ACharacter
@@ -39,15 +40,29 @@ public:
 	bool IsInvincible() const { return InvincibleCount > 0; }
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	UFUNCTION()
 	virtual void HandleDeath(AActor* Killer);
+private:
+	// 사망 몽타주가 진행되는 만큼 메시를 투명하게 하고, 끝나면 숨긴다. Tick에서 부른다
+	void UpdateDeathFade(float DeltaSeconds);
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Storm")
 	TObjectPtr<UStormHealthComponent> HealthComponent;
 
+	// 끝 포즈로 멈춘다. 몽타주 에셋의 자동 블렌드 아웃 설정과 상관없다
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Storm|Animation")
 	TObjectPtr<UAnimMontage> DeathMontage;
+	// 사망 몽타주가 진행되는 동안 재질 파라미터 DeathFadeParameter를 1에서 0으로 내리고, 끝나면 액터를 숨긴다.
+	// 재질이 이 파라미터로 Opacity Mask를 받아야 사라진다 (MF_DeathDissolve)
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Animation")
+	bool bFadeOutOnDeath = false;
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Animation", meta = (EditCondition = "bFadeOutOnDeath"))
+	FName DeathFadeParameter = TEXT("DeathFade");
+	// 죽는 순간 메시의 이 슬롯 재질을 바꿔 끼운다. 전투 중에는 원래 재질(Opaque)을 쓰고 사라질 때만 Masked 재질을 쓰기 위해서다
+	UPROPERTY(EditDefaultsOnly, Category = "Storm|Animation", meta = (EditCondition = "bFadeOutOnDeath"))
+	TMap<FName, TObjectPtr<UMaterialInterface>> DeathMaterials;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Storm|LockOn", meta = (ClampMin = "-1", ClampMax = "1"))
 	float LockOnPointHeightRatio = 0.4f;
@@ -62,4 +77,7 @@ private:
 	// 관통 전진 중이면 끝날 때 폰 충돌을 이 값으로 되돌린다
 	bool bAttackLungePassingPawns = false;
 	TEnumAsByte<ECollisionResponse> PawnResponseBeforeLunge = ECR_Block;
+	bool bDeathFading = false;
+	float DeathFadeElapsed = 0.f;
+	float DeathFadeDuration = 0.f;
 };

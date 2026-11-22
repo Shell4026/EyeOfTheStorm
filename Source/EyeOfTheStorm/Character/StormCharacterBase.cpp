@@ -1,5 +1,7 @@
 #include "Character/StormCharacterBase.h"
 
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Combat/StormHealthComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -117,6 +119,12 @@ void AStormCharacterBase::BeginPlay()
 	GetMesh()->SetReceivesDecals(false);
 }
 
+void AStormCharacterBase::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UpdateDeathFade(DeltaSeconds);
+}
+
 void AStormCharacterBase::HandleDeath(AActor* Killer)
 {
 	EndAttackLunge();
@@ -127,8 +135,55 @@ void AStormCharacterBase::HandleDeath(AActor* Killer)
 		return;
 	}
 	Movement->DisableMovement();
-	if (DeathMontage)
+	if (!DeathMontage)
 	{
-		PlayAnimMontage(DeathMontage);
+		return;
+	}
+	const float Duration = PlayAnimMontage(DeathMontage);
+	// 자동 블렌드 아웃이 켜져 있으면 몽타주가 끝날 때 idle로 돌아가므로, 이번 재생만 끄고 끝 포즈로 멈춰 둔다
+	if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
+	{
+		if (FAnimMontageInstance* Instance = AnimInstance->GetActiveInstanceForMontage(DeathMontage))
+		{
+			Instance->bEnableAutoBlendOut = false;
+		}
+	}
+	if (bFadeOutOnDeath && Duration > 0.f)
+	{
+		USkeletalMeshComponent* MeshComponent = GetMesh();
+		for (const TPair<FName, TObjectPtr<UMaterialInterface>>& Pair : DeathMaterials)
+		{
+			const int32 Index = MeshComponent->GetMaterialIndex(Pair.Key);
+			if (Index != INDEX_NONE && Pair.Value)
+			{
+				MeshComponent->SetMaterial(Index, Pair.Value);
+			}
+		}
+		bDeathFading = true;
+		DeathFadeElapsed = 0.f;
+		DeathFadeDuration = Duration;
+	}
+}
+
+void AStormCharacterBase::UpdateDeathFade(float DeltaSeconds)
+{
+	if (!bDeathFading)
+	{
+		return;
+	}
+	DeathFadeElapsed += DeltaSeconds;
+	const float Alpha = FMath::Clamp(DeathFadeElapsed / DeathFadeDuration, 0.f, 1.f);
+	// 무기처럼 붙어 있는 메시도 같이 사라지게 모든 메시에 넣는다
+	TInlineComponentArray<UMeshComponent*> Meshes(this);
+	for (UMeshComponent* MeshComponent : Meshes)
+	{
+		MeshComponent->SetScalarParameterValueOnMaterials(DeathFadeParameter, 1.f - Alpha);
+	}
+	if (Alpha >= 1.f)
+	{
+		bDeathFading = false;
+		// 없애지 않고 숨긴다. 액터에 붙은 컴포넌트(체력 날씨 복구 타이머 등)는 계속 돌아야 한다
+		SetActorHiddenInGame(true);
+		SetActorEnableCollision(false);
 	}
 }
