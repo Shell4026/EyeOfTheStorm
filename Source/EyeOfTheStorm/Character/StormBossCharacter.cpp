@@ -10,9 +10,49 @@
 #include "Combat/StormMeleeComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogStormBoss, Log, All);
+
+namespace
+{
+	// 페이즈 전환과 날씨 측정용. 체력을 깎는 쪽으로만 간다 (처음으로 돌리려면 다시 시작)
+	void SetBossPhase(const TArray<FString>& Args, UWorld* World)
+	{
+		if (!World || Args.Num() < 1)
+		{
+			UE_LOG(LogStormBoss, Warning, TEXT("Storm.Phase N: N은 1부터 체력 경계 개수까지"));
+			return;
+		}
+		const int32 TargetPhase = FCString::Atoi(*Args[0]);
+		for (TActorIterator<AStormBossCharacter> It(World); It; ++It)
+		{
+			UStormHealthComponent* Health = It->GetHealthComponent();
+			const TArray<float>& Thresholds = Health->GetSortedThresholds();
+			if (TargetPhase < 1 || TargetPhase > Thresholds.Num())
+			{
+				UE_LOG(LogStormBoss, Warning, TEXT("Storm.Phase %d: %s의 페이즈는 1부터 %d까지"), TargetPhase, *It->GetName(), Thresholds.Num());
+				continue;
+			}
+			// 경계 바로 아래로 깎아야 경계 통과 이벤트가 확실히 나간다
+			const float TargetHealth = Thresholds[TargetPhase - 1] * Health->GetMaxHealth() - 0.01f;
+			if (Health->GetHealth() <= TargetHealth)
+			{
+				UE_LOG(LogStormBoss, Warning, TEXT("Storm.Phase %d: %s는 이미 페이즈 %d"), TargetPhase, *It->GetName(), It->GetPhase());
+				continue;
+			}
+			// TakeDamage를 거치지 않아 무적과 상관없이 깎인다
+			Health->ApplyDamage(Health->GetHealth() - TargetHealth, nullptr);
+		}
+	}
+
+	FAutoConsoleCommandWithWorldAndArgs GStormPhaseCommand(
+		TEXT("Storm.Phase"),
+		TEXT("Storm.Phase N: 보스 체력을 N번째 경계 바로 아래로 깎는다 (보스는 1이면 66%, 2면 33%). 날씨는 체력 날씨 컴포넌트의 속도대로 따라간다"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SetBossPhase),
+		ECVF_Cheat);
+}
 
 AStormBossCharacter::AStormBossCharacter()
 {
