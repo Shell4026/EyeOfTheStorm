@@ -79,3 +79,9 @@ Plugins/UnrealMCP/
 
 # Assets
 Content/ParagonSevarog/
+# 임포트 전 원본 에셋 (Poly Haven 텍스처 등). 임포트한 .uasset만 커밋한다
+RawAssets/
+
+# Fab 에셋 (Megascans, GriidArt). 스탠다드 라이선스라 원본 에셋을 공개 저장소에 올리지 않는다. 받는 곳은 HOMEWORK.md와 README에 적는다
+Content/Fab/
+Content/GriidArt_Free_Pillar/
