@@ -87,6 +87,8 @@ struct FVWArtistSetting
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wind", meta = (DisplayName = "풍속 (km/h)", ClampMin = "0", ClampMax = "500"))
 	float WindSpeedKmh = 10.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wind", meta = (DisplayName = "환경 시간을 따름"))
+	bool bCloudUseSkyTime = true;
 };
 
 USTRUCT(BlueprintType)

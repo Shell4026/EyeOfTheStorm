@@ -101,8 +101,13 @@ void AVWActor::Tick(float DeltaTime)
 	if (Artist.TimeSpeed > 0.f)
 	{
 		Artist.Hour = FMath::Fmod(Artist.Hour + Artist.TimeSpeed * DeltaTime, 24.f);
-		CloudTimeHours += Artist.TimeSpeed * DeltaTime;
 		bDirty = true;
+	}
+	const float CloudTimeDelta = (Artist.bCloudUseSkyTime ? Artist.TimeSpeed : 1.f) * DeltaTime;
+	if (CloudTimeDelta > 0.f)
+	{
+		bDirty = true;
+		CloudTimeHours += CloudTimeDelta;
 	}
 
 	if (bDirty)
