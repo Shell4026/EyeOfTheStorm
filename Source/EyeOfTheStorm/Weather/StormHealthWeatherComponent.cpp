@@ -84,5 +84,6 @@ void UStormHealthWeatherComponent::RestoreWeather()
 		return;
 	}
 	UE_LOG(LogStormHealthWeather, Log, TEXT("%s 사망, 날씨를 %s로 되돌린다"), *GetOwner()->GetName(), *First->Preset->GetName());
-	Weather->TransitionTo(First->Preset);
+	// 시간은 되돌리지 않는다. 태양이 뒤로 가면 시간이 역행하는 것처럼 보인다
+	Weather->TransitionTo(First->Preset, false, true);
 }

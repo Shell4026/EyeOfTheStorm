@@ -79,7 +79,7 @@ TStatId UStormWeatherSubsystem::GetStatId() const
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UStormWeatherSubsystem, STATGROUP_Tickables);
 }
 
-void UStormWeatherSubsystem::TransitionTo(UStormWeatherPreset* Preset, bool bInstant)
+void UStormWeatherSubsystem::TransitionTo(UStormWeatherPreset* Preset, bool bInstant, bool bKeepHour)
 {
 	AVWActor* Actor = GetWeatherActor();
 	if (!Preset || !Actor)
@@ -102,8 +102,9 @@ void UStormWeatherSubsystem::TransitionTo(UStormWeatherPreset* Preset, bool bIns
 	TargetPreset = Preset;
 	Elapsed = 0.f;
 	Duration = bInstant ? 0.f : Preset->TransitionDuration;
-	UE_LOG(LogStormWeather, Log, TEXT("날씨 전환 시작: %s (%.1f초, 안개 가시거리 %.0fm)"),
-		*Preset->GetName(), Duration, Preset->FogVisibilityMeters);
+	bTransitionKeepsHour = bKeepHour;
+	UE_LOG(LogStormWeather, Log, TEXT("날씨 전환 시작: %s (%.1f초, 안개 가시거리 %.0fm, 시간 %s)"),
+		*Preset->GetName(), Duration, Preset->FogVisibilityMeters, bKeepHour ? TEXT("유지") : TEXT("프리셋"));
 
 	if (Duration <= 0.f)
 	{
@@ -161,7 +162,13 @@ void UStormWeatherSubsystem::ApplyBlend(float Alpha)
 
 	if (AVWActor* Actor = GetWeatherActor())
 	{
-		Actor->SetArtist(LerpArtist(FromArtist, TargetPreset->Artist, Alpha));
+		FVWArtistSetting Blended = LerpArtist(FromArtist, TargetPreset->Artist, Alpha);
+		if (bTransitionKeepsHour)
+		{
+			// FromArtist의 시간이 아니라 액터의 지금 시간을 써야 시간 속도로 흐른 만큼이 되돌아가지 않는다
+			Blended.Hour = Actor->Artist.Hour;
+		}
+		Actor->SetArtist(Blended);
 	}
 
 	// 안개 없는 프리셋으로 갈 때는 색과 높이 값을 지금 값으로 두고 밀도만 줄인다. 걷히는 동안 안개 색이 기본값 쪽으로 바뀌지 않게 한다 (ApplyBetween과 같은 처리)

@@ -35,7 +35,7 @@ private:
 	void HandleHealthChanged(float NewHealth, float MaxHealth);
 	UFUNCTION()
 	void HandleDeath(AActor* Killer);
-	// 트랙을 멈추고 첫 기준점의 날씨로 되돌린다. 걸리는 시간은 그 프리셋의 TransitionDuration
+	// 트랙을 멈추고 첫 기준점의 날씨로 되돌린다. 시간(태양 위치)은 지금 값을 둔다. 걸리는 시간은 그 프리셋의 TransitionDuration
 	void RestoreWeather();
 protected:
 	// 두 기준점의 체력 비율 사이에서는 두 날씨를 섞는다

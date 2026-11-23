@@ -40,8 +40,9 @@ public:
 	virtual TStatId GetStatId() const override;
 
 	// 레벨의 날씨 액터와 높이 안개를 지금 상태에서 Preset으로 TransitionDuration 동안 바꾼다. 전환 중에 다시 부르면 그 순간의 날씨에서 이어서 바꾼다. 진행 중인 트랙은 멈춘다
+	// bKeepHour면 프리셋의 시간을 쓰지 않고 날씨 액터의 지금 시간을 그대로 둔다 (시간 속도가 있으면 계속 흐른다)
 	UFUNCTION(BlueprintCallable, Category = "Storm|Weather")
-	void TransitionTo(UStormWeatherPreset* Preset, bool bInstant = false);
+	void TransitionTo(UStormWeatherPreset* Preset, bool bInstant = false, bool bKeepHour = false);
 	// 기준점 사이를 섞는 트랙을 시작하고 Position의 날씨를 바로 적용한다. Position이 기준점 범위 밖이면 가장 가까운 기준점의 날씨. 진행 중인 전환은 멈춘다
 	void StartTrack(const TArray<FStormWeatherKey>& Keys, float Position, float FollowRate);
 	// 날씨는 이 위치를 향해 FollowRate(초당 위치 변화) 속도로 따라간다. FollowRate가 0이면 바로 간다
@@ -79,6 +80,7 @@ private:
 	FStormFogState FromFog;
 	float Elapsed = 0.f;
 	float Duration = 0.f;
+	bool bTransitionKeepsHour = false;
 
 	// 트랙
 
